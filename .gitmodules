@@ -10,3 +10,6 @@
 [submodule "lib/solmate"]
 	path = lib/solmate
 	url = https://github.com/transmissions11/solmate
+[submodule "lib/circomlib"]
+	path = lib/circomlib
+	url = https://github.com/iden3/circomlib
