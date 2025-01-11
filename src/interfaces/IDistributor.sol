@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.26;
-import {Asset, AssetType} from "./IRedPacket.sol";
+import {Asset, AssetType} from "./types.sol";
 
 // 分配算法接口
 interface IDistributor {
