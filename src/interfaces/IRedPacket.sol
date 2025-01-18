@@ -6,25 +6,47 @@ import "./IDistributor.sol";
 import "./types.sol";
 
 interface IRedPacket {
+    struct NFTInfo {
+        address token;
+        uint256 tokenId;
+    }
+
+    struct ERC1155Info {
+        address token;
+        uint256 tokenId;
+    }
+
     /// errors
     error NotFactory();
+    error NotCreator();
     error NotStarted();
+    error NotExpired();
     error Expired();
     error AlreadyClaimed();
     error NoRemainingShares();
     error AccessDenied(address);
     error TriggerConditionNotMet(address);
-    error TransferFailed();
-
+    error EthTransferFailed();
     /// events
     event Claimed(
         address indexed claimer,
         uint256 indexed redPacketIndex,
-        IDistributor.DistributeResult[] result
+        DistributeResult[] result
     );
+
+    event ClaimAll(address indexed claimer, uint256 totalRedPackets);
 
     function initialize(
         RedPacketConfig[] calldata config,
         address _creator
     ) external;
+
+    function claim(
+        uint256 redPacketIndex,
+        bytes[] calldata accessProofs
+    ) external returns (bool);
+
+    function claimAll(bytes[][] calldata accessProofs) external;
+
+    function isExpired() external view returns (bool);
 }

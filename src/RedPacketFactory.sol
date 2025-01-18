@@ -16,7 +16,14 @@ contract RedPacketFactory is IRedPacketFactory {
 
     IPermit2 public immutable PERMIT2;
 
-    mapping(address => address[]) public userRedPackets;
+    // 存储所有创建者地址
+    address[] public creators;
+    // 用于检查地址是否已经是创建者
+    mapping(address => bool) public isCreator;
+    // creator => redPackets
+    mapping(address => address[]) public redPackets;
+    // redPacket => creator
+    mapping(address => address) public redPacketCreator;
 
     // _permit: 0x000000000022D473030F116dDEE9F6B43aC78BA3
     constructor(address _beacon, address _permit) {
@@ -138,7 +145,13 @@ contract RedPacketFactory is IRedPacketFactory {
     function _deployRedPacket() internal returns (address redPacket) {
         redPacket = address(new BeaconProxy(address(beacon), ""));
 
-        userRedPackets[msg.sender].push(redPacket);
+        if (!isCreator[msg.sender]) {
+            creators.push(msg.sender);
+            isCreator[msg.sender] = true;
+        }
+
+        redPackets[msg.sender].push(redPacket);
+        redPacketCreator[redPacket] = msg.sender;
 
         emit RedPacketCreated(redPacket, msg.sender);
     }
