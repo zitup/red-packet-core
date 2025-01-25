@@ -38,7 +38,6 @@ contract PriceTrigger is ITrigger {
         Condition condition;
         uint256 price; // with oracle decimal. Price * 10 ** priceFeed.decimals()
         uint256 upperBound;
-        uint256 decimals;
     }
 
     constructor(address _sequencer) {

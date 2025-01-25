@@ -9,17 +9,11 @@ import {IERC1155} from "@oz/contracts/interfaces/IERC1155.sol";
 /// @title HolderValidator
 /// @notice Validates if a user holds required amount of tokens
 contract HolderAccess is IAccess {
-    enum ERC721ValidationMode {
-        Specific, // validate tokenId
-        Amount // validate amount
-    }
-
     struct TokenRequirement {
         AssetType tokenType;
         address token;
         uint256 tokenId;
         uint256 minAmount;
-        ERC721ValidationMode mode;
     }
 
     /// @notice Validates if the user meets token holding requirements
@@ -41,18 +35,13 @@ contract HolderAccess is IAccess {
         uint256 minAmount = requirement.minAmount;
         address token = requirement.token;
         uint256 tokenId = requirement.tokenId;
-        ERC721ValidationMode mode = requirement.mode;
 
         if (tokenType == AssetType.Native) {
             return user.balance >= minAmount;
         } else if (tokenType == AssetType.ERC20) {
             return IERC20(token).balanceOf(user) >= minAmount;
         } else if (tokenType == AssetType.ERC721) {
-            if (mode == ERC721ValidationMode.Specific) {
-                return IERC721(token).ownerOf(tokenId) == user;
-            } else {
-                return IERC721(token).balanceOf(user) >= minAmount;
-            }
+            return IERC721(token).balanceOf(user) >= minAmount;
         } else if (tokenType == AssetType.ERC1155) {
             return IERC1155(token).balanceOf(user, tokenId) >= minAmount;
         }

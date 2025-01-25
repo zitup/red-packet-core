@@ -2,7 +2,7 @@
 pragma solidity 0.8.26;
 import "../interfaces/IAccess.sol";
 
-contract AccessValidatorTemplate is IAccess {
+contract LuckyDrawAccess is IAccess {
     error InvalidProbability();
 
     struct LuckyDrawConfig {

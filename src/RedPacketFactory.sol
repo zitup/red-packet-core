@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.26;
 
+import {Ownable} from "@oz/contracts/access/Ownable.sol";
 import {BeaconProxy} from "@oz/contracts/proxy/beacon/BeaconProxy.sol";
 import {IERC721} from "@oz/contracts/interfaces/IERC721.sol";
 import {IERC1155} from "@oz/contracts/interfaces/IERC1155.sol";
@@ -10,7 +11,7 @@ import "./interfaces/IRedPacket.sol";
 
 /// @title RedPacketFactory
 /// @notice Factory contract for creating red packet proxies
-contract RedPacketFactory is IRedPacketFactory {
+contract RedPacketFactory is IRedPacketFactory, Ownable {
     // Beacon合约地址
     address public immutable beacon;
 
@@ -25,17 +26,57 @@ contract RedPacketFactory is IRedPacketFactory {
     // redPacket => creator
     mapping(address => address) public redPacketCreator;
 
+    // 协议费接收地址
+    address public feeReceiver;
+    // 协议费率 (基数为 10000)
+    uint256 public feeRate;
+    // NFT固定手续费（以wei为单位）
+    uint256 public nftFlatFee;
+
     // _permit: 0x000000000022D473030F116dDEE9F6B43aC78BA3
-    constructor(address _beacon, address _permit) {
+    constructor(
+        address _beacon,
+        address _permit,
+        address _feeReceiver,
+        uint256 _feeRate,
+        uint256 _nftFlatFee
+    ) Ownable(msg.sender) {
         if (_beacon == address(0)) revert ZeroBeaconAddress();
+        if (_permit == address(0)) revert ZeroPermitAddress();
+        if (_feeReceiver == address(0)) revert InvalidFeeReceiver();
+        if (_feeRate > 10000) revert InvalidFeeRate();
+
         beacon = _beacon;
         PERMIT2 = IPermit2(_permit);
+        feeReceiver = _feeReceiver;
+        feeRate = _feeRate;
+        nftFlatFee = _nftFlatFee;
+    }
+
+    // 设置协议费配置（需要添加访问控制）
+    function setFeeConfig(
+        address _feeReceiver,
+        uint256 _feeRate
+    ) external onlyOwner {
+        if (_feeReceiver == address(0)) revert InvalidFeeReceiver();
+        if (_feeRate > 10000) revert InvalidFeeRate();
+
+        feeReceiver = _feeReceiver;
+        feeRate = _feeRate;
+
+        emit FeeConfigUpdated(_feeReceiver, _feeRate);
+    }
+
+    // 设置NFT固定手续费
+    function setNFTFlatFee(uint256 _nftFlatFee) external onlyOwner {
+        nftFlatFee = _nftFlatFee;
+        emit NFTFlatFeeUpdated(_nftFlatFee);
     }
 
     function createRedPacket(
         RedPacketConfig[] calldata configs,
         bytes calldata signature
-    ) external returns (address redPacket) {
+    ) public payable returns (address redPacket) {
         if (configs.length == 0) revert EmptyConfigs();
 
         // # 1. 验证配置
@@ -79,60 +120,82 @@ contract RedPacketFactory is IRedPacketFactory {
         RedPacketConfig[] calldata configs,
         bytes calldata permit
     ) internal {
-        uint256 expectedEthValue = 0;
+        uint256 expectedEthValue;
+        uint256 totalFee;
+        (expectedEthValue, totalFee) = _handleERC20Transfers(
+            redPacket,
+            configs,
+            permit
+        );
+        uint256 nftFee = _handleNFTTransfers(redPacket, configs);
 
+        // 添加NFT固定手续费
+        totalFee += nftFee;
+
+        // 检查并转移ETH（包含手续费）
+        if (msg.value < (expectedEthValue + totalFee))
+            revert InvalidEthAmount();
+
+        // 转移完整ETH金额到红包合约
+        if (expectedEthValue > 0) {
+            (bool success, ) = redPacket.call{value: expectedEthValue}("");
+            if (!success) revert EthTransferFailed();
+        }
+
+        // 转移ETH手续费
+        if (totalFee > 0) {
+            (bool success, ) = feeReceiver.call{value: totalFee}("");
+            if (!success) revert EthTransferFailed();
+        }
+    }
+
+    function _handleERC20Transfers(
+        address redPacket,
+        RedPacketConfig[] calldata configs,
+        bytes calldata permit
+    ) internal returns (uint256 expectedEthValue, uint256 totalFee) {
         (
             IPermit2.PermitBatchTransferFrom memory permitBatch,
             bytes memory signature
         ) = abi.decode(permit, (IPermit2.PermitBatchTransferFrom, bytes));
 
-        IPermit2.SignatureTransferDetails[]
-            memory transferDetails = new IPermit2.SignatureTransferDetails[](
-                permitBatch.permitted.length
-            );
+        IPermit2.SignatureTransferDetails[] memory transferDetails = new IPermit2.SignatureTransferDetails[](
+            permitBatch.permitted.length * 2 // 为每个ERC20资产预留fee转账的空间
+        );
+
+        uint256 transferDetailsIndex = 0;
 
         for (uint256 i = 0; i < configs.length; i++) {
             for (uint256 j = 0; j < configs[i].assets.length; j++) {
                 Asset calldata asset = configs[i].assets[j];
 
                 if (asset.assetType == AssetType.Native) {
+                    uint256 fee = (asset.amount * feeRate) / 10000;
+                    totalFee += fee;
                     expectedEthValue += asset.amount;
                 } else if (asset.assetType == AssetType.ERC20) {
-                    // 构建permit2 transferDetails
-                    transferDetails[transferDetails.length] = IPermit2
+                    // 转移完整金额到红包合约
+                    transferDetails[transferDetailsIndex++] = IPermit2
                         .SignatureTransferDetails({
                             to: redPacket,
                             requestedAmount: asset.amount
                         });
-                } else if (asset.assetType == AssetType.ERC721) {
-                    // ERC721直接转账
-                    IERC721(asset.token).safeTransferFrom(
-                        msg.sender,
-                        redPacket,
-                        asset.tokenId
-                    );
-                } else if (asset.assetType == AssetType.ERC1155) {
-                    // ERC1155直接转账
-                    IERC1155(asset.token).safeTransferFrom(
-                        msg.sender,
-                        redPacket,
-                        asset.tokenId,
-                        asset.amount,
-                        ""
-                    );
+
+                    // 额外转移手续费
+                    uint256 fee = (asset.amount * feeRate) / 10000;
+                    if (fee > 0) {
+                        transferDetails[transferDetailsIndex++] = IPermit2
+                            .SignatureTransferDetails({
+                                to: feeReceiver,
+                                requestedAmount: fee
+                            });
+                    }
                 }
             }
         }
 
-        if (msg.value < expectedEthValue) revert InvalidEthAmount();
-        // 如果有ETH，转发给红包合约
-        if (expectedEthValue > 0) {
-            (bool success, ) = redPacket.call{value: expectedEthValue}("");
-            if (!success) revert EthTransferFailed();
-        }
-
-        // 如果有ERC20资产，处理permit2批量转账
-        if (permitBatch.permitted.length > 0) {
+        // 执行ERC20转账
+        if (transferDetailsIndex > 0) {
             PERMIT2.permitTransferFrom(
                 permitBatch,
                 transferDetails,
@@ -140,6 +203,39 @@ contract RedPacketFactory is IRedPacketFactory {
                 signature
             );
         }
+    }
+
+    function _handleNFTTransfers(
+        address redPacket,
+        RedPacketConfig[] calldata configs
+    ) internal returns (uint256 nftFee) {
+        uint256 nftCount = 0;
+
+        for (uint256 i = 0; i < configs.length; i++) {
+            for (uint256 j = 0; j < configs[i].assets.length; j++) {
+                Asset calldata asset = configs[i].assets[j];
+
+                if (asset.assetType == AssetType.ERC721) {
+                    IERC721(asset.token).safeTransferFrom(
+                        msg.sender,
+                        redPacket,
+                        asset.tokenId
+                    );
+                    nftCount++;
+                } else if (asset.assetType == AssetType.ERC1155) {
+                    IERC1155(asset.token).safeTransferFrom(
+                        msg.sender,
+                        redPacket,
+                        asset.tokenId,
+                        asset.amount,
+                        ""
+                    );
+                    nftCount++;
+                }
+            }
+        }
+
+        return nftCount * nftFlatFee;
     }
 
     function _deployRedPacket() internal returns (address redPacket) {

@@ -6,6 +6,7 @@ interface IRedPacketFactory {
     /// Errors
     error EmptyConfigs();
     error ZeroBeaconAddress();
+    error ZeroPermitAddress();
     error NoAssets();
     error InvalidShares();
     error InvalidDistributor();
@@ -14,12 +15,17 @@ interface IRedPacketFactory {
     error InvalidTokenAmount(address);
     error InvalidEthAmount();
     error EthTransferFailed();
+    error InvalidFeeRate();
+    error InvalidFeeReceiver();
 
     /// Events
     event RedPacketCreated(
         address indexed redPacket, // 红包合约地址
         address indexed creator // 创建者
     );
+
+    event FeeConfigUpdated(address indexed feeReceiver, uint256 feeRate);
+    event NFTFlatFeeUpdated(uint256 nftFlatFee);
 
     function beacon() external view returns (address); // Beacon地址
 
@@ -28,8 +34,14 @@ interface IRedPacketFactory {
         uint256 index
     ) external view returns (address);
 
+    function feeReceiver() external view returns (address);
+
+    function feeRate() external view returns (uint256);
+
+    function setFeeConfig(address _feeReceiver, uint256 _feeRate) external;
+
     function createRedPacket(
         RedPacketConfig[] calldata configs,
         bytes calldata permit
-    ) external returns (address redPacket); // 返回红包合约地址
+    ) external payable returns (address redPacket); // 返回红包合约地址
 }
