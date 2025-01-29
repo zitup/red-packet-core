@@ -3,6 +3,13 @@ pragma solidity 0.8.26;
 import "./IRedPacket.sol";
 
 interface IRedPacketFactory {
+    // 使用一个枚举来标识组件类型
+    enum ComponentType {
+        Access,
+        Trigger,
+        Distributor
+    }
+
     /// Errors
     error EmptyConfigs();
     error ZeroBeaconAddress();
@@ -13,10 +20,12 @@ interface IRedPacketFactory {
     error NoAccessControl();
     error InvalidAccessValidator();
     error InvalidTokenAmount(address);
-    error InvalidEthAmount();
+    error InvalidEthAmount(uint256 expectedEthValue);
     error EthTransferFailed();
     error InvalidFeeRate();
     error InvalidFeeReceiver();
+    error InvalidComponent(ComponentType componentType, address component);
+    error ZeroAddress();
 
     /// Events
     event RedPacketCreated(
@@ -26,6 +35,14 @@ interface IRedPacketFactory {
 
     event FeeConfigUpdated(address indexed feeReceiver, uint256 feeRate);
     event NFTFlatFeeUpdated(uint256 nftFlatFee);
+    event ComponentRegistered(
+        ComponentType indexed componentType,
+        address indexed component
+    );
+    event ComponentUnregistered(
+        ComponentType indexed componentType,
+        address indexed component
+    );
 
     function beacon() external view returns (address); // Beacon地址
 

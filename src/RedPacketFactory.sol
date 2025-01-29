@@ -33,14 +33,18 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
     // NFT固定手续费（以wei为单位）
     uint256 public nftFlatFee;
 
+    // 合并为一个注册表
+    mapping(ComponentType => mapping(address => bool)) public isRegistered;
+
     // _permit: 0x000000000022D473030F116dDEE9F6B43aC78BA3
     constructor(
+        address _owner,
         address _beacon,
         address _permit,
         address _feeReceiver,
         uint256 _feeRate,
         uint256 _nftFlatFee
-    ) Ownable(msg.sender) {
+    ) Ownable(_owner) {
         if (_beacon == address(0)) revert ZeroBeaconAddress();
         if (_permit == address(0)) revert ZeroPermitAddress();
         if (_feeReceiver == address(0)) revert InvalidFeeReceiver();
@@ -73,6 +77,42 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
         emit NFTFlatFeeUpdated(_nftFlatFee);
     }
 
+    // Getter functions
+    /// @notice 获取创建者总数
+    function getCreatorsCount() external view returns (uint256) {
+        return creators.length;
+    }
+
+    /// @notice 获取指定创建者的所有红包地址
+    /// @param creator 创建者地址
+    function getRedPackets(
+        address creator
+    ) external view returns (address[] memory) {
+        return redPackets[creator];
+    }
+
+    /// @notice 获取指定红包的创建者
+    /// @param redPacket 红包地址
+    function getRedPacketCreator(
+        address redPacket
+    ) external view returns (address) {
+        return redPacketCreator[redPacket];
+    }
+
+    /// @notice 获取指定组件类型的所有已注册组件
+    /// @param componentType 组件类型
+    /// @param components 要检查的组件地址列表
+    /// @return results 每个组件是否已注册的布尔值数组
+    function getRegisteredComponents(
+        ComponentType componentType,
+        address[] calldata components
+    ) external view returns (bool[] memory results) {
+        results = new bool[](components.length);
+        for (uint256 i = 0; i < components.length; i++) {
+            results[i] = isRegistered[componentType][components[i]];
+        }
+    }
+
     function createRedPacket(
         RedPacketConfig[] calldata configs,
         bytes calldata signature
@@ -94,24 +134,78 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
         IRedPacket(redPacket).initialize(configs, msg.sender);
     }
 
-    // 简单校验配置
+    function registerComponents(
+        ComponentType componentType,
+        address[] calldata components
+    ) external onlyOwner {
+        for (uint i = 0; i < components.length; i++) {
+            if (components[i] == address(0)) revert ZeroAddress();
+            isRegistered[componentType][components[i]] = true;
+            emit ComponentRegistered(componentType, components[i]);
+        }
+    }
+
+    function unregisterComponents(
+        ComponentType componentType,
+        address[] calldata components
+    ) external onlyOwner {
+        for (uint i = 0; i < components.length; i++) {
+            isRegistered[componentType][components[i]] = false;
+            emit ComponentUnregistered(componentType, components[i]);
+        }
+    }
+
+    // 简化验证逻辑
     function _validateRedPacketConfig(
         RedPacketConfig calldata config
-    ) internal pure {
-        // 最基础的安全检查
+    ) internal view {
+        // 基础检查
         if (config.assets.length == 0) revert NoAssets();
         if (config.base.shares == 0) revert InvalidShares();
-        if (config.base.distribute.distributor == address(0))
-            revert InvalidDistributor();
-        if (config.base.access.length < 1) revert NoAccessControl();
-        if (config.base.access[0].validator == address(0))
-            revert InvalidAccessValidator();
+        if (config.base.access.length == 0) revert NoAccessControl();
 
-        // 资产基础检查
+        // 验证资产金额
         for (uint i = 0; i < config.assets.length; i++) {
-            // require(config.assets[i].token != address(0), "Invalid token");
-            if (config.assets[i].amount == 0)
+            if (config.assets[i].amount == 0) {
                 revert InvalidTokenAmount(config.assets[i].token);
+            }
+        }
+
+        // 验证 access
+        for (uint i = 0; i < config.base.access.length; i++) {
+            if (
+                !isRegistered[ComponentType.Access][
+                    config.base.access[i].validator
+                ]
+            ) {
+                revert InvalidComponent(
+                    ComponentType.Access,
+                    config.base.access[i].validator
+                );
+            }
+        }
+
+        // 验证 triggers
+        for (uint i = 0; i < config.base.triggers.length; i++) {
+            address validator = config.base.triggers[i].validator;
+            if (
+                validator != address(0) &&
+                !isRegistered[ComponentType.Trigger][validator]
+            ) {
+                revert InvalidComponent(ComponentType.Trigger, validator);
+            }
+        }
+
+        // 验证 distributor
+        if (
+            !isRegistered[ComponentType.Distributor][
+                config.base.distribute.distributor
+            ]
+        ) {
+            revert InvalidComponent(
+                ComponentType.Distributor,
+                config.base.distribute.distributor
+            );
         }
     }
 
@@ -134,7 +228,7 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
 
         // 检查并转移ETH（包含手续费）
         if (msg.value < (expectedEthValue + totalFee))
-            revert InvalidEthAmount();
+            revert InvalidEthAmount(expectedEthValue + totalFee);
 
         // 转移完整ETH金额到红包合约
         if (expectedEthValue > 0) {
@@ -160,7 +254,7 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
         ) = abi.decode(permit, (IPermit2.PermitBatchTransferFrom, bytes));
 
         IPermit2.SignatureTransferDetails[] memory transferDetails = new IPermit2.SignatureTransferDetails[](
-            permitBatch.permitted.length * 2 // 为每个ERC20资产预留fee转账的空间
+            permitBatch.permitted.length // 为每个ERC20资产预留fee转账的空间
         );
 
         uint256 transferDetailsIndex = 0;
