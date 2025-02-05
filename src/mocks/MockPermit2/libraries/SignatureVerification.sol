@@ -2,6 +2,7 @@
 pragma solidity ^0.8.17;
 
 import {IERC1271} from "../interfaces/IERC1271.sol";
+import {console} from "forge-std/console.sol";
 
 library SignatureVerification {
     /// @notice Thrown when the passed in signature is not a valid length
@@ -44,6 +45,8 @@ library SignatureVerification {
             }
             address signer = ecrecover(hash, v, r, s);
             if (signer == address(0)) revert InvalidSignature();
+            console.log("signer", signer);
+            console.log("claimedSigner", claimedSigner);
             if (signer != claimedSigner) revert InvalidSigner();
         } else {
             bytes4 magicValue = IERC1271(claimedSigner).isValidSignature(

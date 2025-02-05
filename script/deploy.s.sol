@@ -24,14 +24,17 @@ import {StateTrigger} from "../src/trigger/StateTrigger.sol";
 import {FixedDistributor} from "../src/distributor/FixedDistributor.sol";
 import {RandomDistributor} from "../src/distributor/RandomDistributor.sol";
 
-// Mock Permit2
+// Mock Contracts
 import {Permit2 as MockPermit2} from "../src/mocks/MockPermit2/Permit2.sol";
+import {MockAggregatorV3} from "../src/mocks/MockAggregatorV3.sol";
 
 contract Deploy is Script {
     // 各链上的 Permit2 地址
     mapping(uint256 => address) internal PERMIT2;
     // 各链上的 Chainlink sequencer 地址
     mapping(uint256 => address) internal SEQUENCER;
+    // 各链上的 ETH/USD 价格预言机地址
+    mapping(uint256 => address) internal ETH_USD_FEED;
 
     // 存储部署的合约地址
     RedPacketFactory public factory;
@@ -72,6 +75,14 @@ contract Deploy is Script {
         SEQUENCER[8453] = 0xBCF85224fc0756B9Fa45aA7892530B47e10b6433; // Base
         SEQUENCER[42161] = 0xFdB631F5EE196F0ed6FAa767959853A9F217697D; // Arbitrum
         SEQUENCER[10] = 0x371EAD81c9102C9BF4874A9075FFFf170F2Ee389; // Optimism
+
+        // ETH/USD Price Feed addresses
+        ETH_USD_FEED[31337] = address(0); // Anvil - 将在部署时设置
+        ETH_USD_FEED[11155111] = 0x694AA1769357215DE4FAC081bf1f309aDC325306; // Sepolia
+        ETH_USD_FEED[8453] = 0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70; // Base
+        ETH_USD_FEED[56] = 0x9ef1B8c0E4F7dc8bF5719Ea496883DC6401d5b2e; // BSC
+        ETH_USD_FEED[42161] = 0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612; // Arbitrum
+        ETH_USD_FEED[10] = 0x13e3Ee699D1909E989722E753853AE30b17e08c5; // Optimism
     }
 
     function run() external {
@@ -88,8 +99,6 @@ contract Deploy is Script {
     function deployContracts() internal {
         // 部署配置
         address feeReceiver = vm.envAddress("FEE_RECEIVER");
-        uint256 feeRate = 10; // 0.1%
-        uint256 nftFlatFee = 0.0001 ether;
 
         // 1. 部署 Access
         verifier = new Groth16Verifier();
@@ -124,12 +133,17 @@ contract Deploy is Script {
             msg.sender
         );
 
-        // 如果是本地网络，部署 Mock Permit2
+        // 如果是本地网络，部署 Mock Permit2 和 Mock Price Feed
         if (block.chainid == 31337) {
             MockPermit2 mockPermit2 = new MockPermit2{
                 salt: bytes32(uint256(4))
             }();
             PERMIT2[block.chainid] = address(mockPermit2);
+
+            MockAggregatorV3 mockPriceFeed = new MockAggregatorV3{
+                salt: bytes32(uint256(5))
+            }();
+            ETH_USD_FEED[block.chainid] = address(mockPriceFeed);
         }
 
         // 6. 使用 create2 部署工厂合约
@@ -139,8 +153,7 @@ contract Deploy is Script {
             address(beacon),
             PERMIT2[block.chainid],
             feeReceiver,
-            feeRate,
-            nftFlatFee
+            ETH_USD_FEED[block.chainid]
         );
     }
 
@@ -183,6 +196,10 @@ contract Deploy is Script {
         console.log("Implementation:", address(implementation));
         console.log("Beacon:", address(beacon));
         console.log("Factory:", address(factory));
+        console.log("Permit2:", PERMIT2[block.chainid]);
+        if (block.chainid == 31337) {
+            console.log("ETH/USD Feed:", ETH_USD_FEED[block.chainid]);
+        }
 
         console.log("\nAccess:");
         console.log("CodeAccess:", address(codeAccess));
