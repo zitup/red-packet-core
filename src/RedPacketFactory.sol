@@ -7,6 +7,7 @@ import {IERC721} from "@oz/contracts/interfaces/IERC721.sol";
 import {IERC1155} from "@oz/contracts/interfaces/IERC1155.sol";
 import {ISignatureTransfer as IPermit2} from "@permit2/interfaces/ISignatureTransfer.sol";
 import {IRedPacketFactory} from "./interfaces/IRedPacketFactory.sol";
+import {IAggregatorV3} from "./interfaces/IAggregatorV3.sol";
 import "./interfaces/IRedPacket.sol";
 
 /// @title RedPacketFactory
@@ -16,6 +17,12 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
     address public immutable beacon;
 
     IPermit2 public immutable PERMIT2;
+
+    // ETH/USD 价格预言机
+    IAggregatorV3 public immutable ETH_USD_FEED;
+
+    // 每份红包的费用分母 (10表示0.1U, 100表示0.01U)
+    uint256 public feeShareDenominator = 10;
 
     // 存储所有创建者地址
     address[] public creators;
@@ -28,10 +35,6 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
 
     // 协议费接收地址
     address public feeReceiver;
-    // 协议费率 (基数为 10000)
-    uint256 public feeRate;
-    // NFT固定手续费（以wei为单位）
-    uint256 public nftFlatFee;
 
     // 合并为一个注册表
     mapping(ComponentType => mapping(address => bool)) public isRegistered;
@@ -42,39 +45,24 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
         address _beacon,
         address _permit,
         address _feeReceiver,
-        uint256 _feeRate,
-        uint256 _nftFlatFee
+        address _ethUsdFeed
     ) Ownable(_owner) {
         if (_beacon == address(0)) revert ZeroBeaconAddress();
         if (_permit == address(0)) revert ZeroPermitAddress();
         if (_feeReceiver == address(0)) revert InvalidFeeReceiver();
-        if (_feeRate > 10000) revert InvalidFeeRate();
+        if (_ethUsdFeed == address(0)) revert InvalidPriceFeed();
 
         beacon = _beacon;
         PERMIT2 = IPermit2(_permit);
         feeReceiver = _feeReceiver;
-        feeRate = _feeRate;
-        nftFlatFee = _nftFlatFee;
+        ETH_USD_FEED = IAggregatorV3(_ethUsdFeed);
     }
 
-    // 设置协议费配置（需要添加访问控制）
-    function setFeeConfig(
-        address _feeReceiver,
-        uint256 _feeRate
-    ) external onlyOwner {
+    // 设置协议费接收地址
+    function setFeeReceiver(address _feeReceiver) external onlyOwner {
         if (_feeReceiver == address(0)) revert InvalidFeeReceiver();
-        if (_feeRate > 10000) revert InvalidFeeRate();
-
         feeReceiver = _feeReceiver;
-        feeRate = _feeRate;
-
-        emit FeeConfigUpdated(_feeReceiver, _feeRate);
-    }
-
-    // 设置NFT固定手续费
-    function setNFTFlatFee(uint256 _nftFlatFee) external onlyOwner {
-        nftFlatFee = _nftFlatFee;
-        emit NFTFlatFeeUpdated(_nftFlatFee);
+        emit FeeReceiverUpdated(_feeReceiver);
     }
 
     // Getter functions
@@ -113,6 +101,45 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
         }
     }
 
+    /// @notice 计算指定份数的手续费（以ETH为单位）
+    /// @param shares 红包份数
+    /// @return feeInETH 手续费（以ETH为单位）
+    /// @return feeInUSD 手续费（以USD为单位，6位小数）
+    /// @return ethPrice ETH/USD价格（8位小数）
+    function calculateFee(
+        uint256 shares
+    )
+        external
+        view
+        returns (uint256 feeInETH, uint256 feeInUSD, int256 ethPrice)
+    {
+        return _calculateFee(shares);
+    }
+
+    function _calculateFee(
+        uint256 shares
+    )
+        internal
+        view
+        returns (uint256 feeInETH, uint256 feeInUSD, int256 ethPrice)
+    {
+        // 获取最新的ETH/USD价格
+        (, ethPrice, , , ) = ETH_USD_FEED.latestRoundData();
+        if (ethPrice <= 0) revert InvalidPrice();
+
+        // 计算以USD计价的总费用（每份0.1U）
+        // 例如：10份 * (1/10)U = 1U
+        feeInUSD = shares * (1e6 / feeShareDenominator); // 结果保持6位小数
+
+        // 将USD费用转换为ETH
+        // 1. 将ETH价格转换为1U对应的ETH数量（1/price）
+        // 2. 将这个比例应用到我们的feeInUSD上
+        // ethPrice是ETH/USD价格，带有8位小数
+        uint256 priceScaled = uint256(ethPrice) * 1e10; // 8位小数 -> 18位小数
+        uint256 oneUsdInEth = 1e36 / priceScaled; // 1e18 * 1e18 / priceScaled，得到1U对应的ETH数量（18位小数）
+        feeInETH = (feeInUSD * oneUsdInEth) / 1e6; // feeInUSD（6位小数）* oneUsdInEth（18位小数）/ 1e6 = ETH数量（18位小数）
+    }
+
     function createRedPacket(
         RedPacketConfig[] calldata configs,
         bytes calldata signature
@@ -120,15 +147,17 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
         if (configs.length == 0) revert EmptyConfigs();
 
         // # 1. 验证配置
+        uint256 totalShares;
         for (uint i = 0; i < configs.length; i++) {
             _validateRedPacketConfig(configs[i]);
+            totalShares += configs[i].base.shares;
         }
 
         // # 2. 部署红包合约
         redPacket = _deployRedPacket();
 
         // # 3. 处理资产转移
-        _transferAssets(redPacket, configs, signature);
+        _transferAssets(redPacket, configs, signature, totalShares);
 
         // # 4. 初始化红包合约
         IRedPacket(redPacket).initialize(configs, msg.sender);
@@ -212,19 +241,16 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
     function _transferAssets(
         address redPacket,
         RedPacketConfig[] calldata configs,
-        bytes calldata permit
+        bytes calldata permit,
+        uint256 totalShares
     ) internal {
         uint256 expectedEthValue;
-        uint256 totalFee;
-        (expectedEthValue, totalFee) = _handleERC20Transfers(
-            redPacket,
-            configs,
-            permit
-        );
-        uint256 nftFee = _handleNFTTransfers(redPacket, configs);
+        (expectedEthValue) = _handleERC20Transfers(redPacket, configs, permit);
 
-        // 添加NFT固定手续费
-        totalFee += nftFee;
+        _handleNFTTransfers(redPacket, configs);
+
+        // 计算基于份数的手续费
+        (uint256 totalFee, , ) = _calculateFee(totalShares);
 
         // 检查并转移ETH（包含手续费）
         if (msg.value < (expectedEthValue + totalFee))
@@ -247,7 +273,7 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
         address redPacket,
         RedPacketConfig[] calldata configs,
         bytes calldata permit
-    ) internal returns (uint256 expectedEthValue, uint256 totalFee) {
+    ) internal returns (uint256 expectedEthValue) {
         IPermit2.PermitBatchTransferFrom memory permitBatch;
         bytes memory signature;
         IPermit2.SignatureTransferDetails[] memory transferDetails;
@@ -269,8 +295,6 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
                 Asset calldata asset = configs[i].assets[j];
 
                 if (asset.assetType == AssetType.Native) {
-                    uint256 fee = (asset.amount * feeRate) / 10000;
-                    totalFee += fee;
                     expectedEthValue += asset.amount;
                 } else if (asset.assetType == AssetType.ERC20) {
                     // 转移完整金额到红包合约
@@ -279,16 +303,6 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
                             to: redPacket,
                             requestedAmount: asset.amount
                         });
-
-                    // 额外转移手续费
-                    uint256 fee = (asset.amount * feeRate) / 10000;
-                    if (fee > 0) {
-                        transferDetails[transferDetailsIndex++] = IPermit2
-                            .SignatureTransferDetails({
-                                to: feeReceiver,
-                                requestedAmount: fee
-                            });
-                    }
                 }
             }
         }
@@ -307,9 +321,7 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
     function _handleNFTTransfers(
         address redPacket,
         RedPacketConfig[] calldata configs
-    ) internal returns (uint256 totalNftFee) {
-        uint256 nftCount;
-
+    ) internal {
         for (uint256 i = 0; i < configs.length; i++) {
             for (uint256 j = 0; j < configs[i].assets.length; j++) {
                 Asset calldata asset = configs[i].assets[j];
@@ -320,7 +332,6 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
                         redPacket,
                         asset.tokenId
                     );
-                    nftCount++;
                 } else if (asset.assetType == AssetType.ERC1155) {
                     IERC1155(asset.token).safeTransferFrom(
                         msg.sender,
@@ -329,12 +340,9 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
                         asset.amount,
                         ""
                     );
-                    nftCount++;
                 }
             }
         }
-
-        totalNftFee = nftCount * nftFlatFee;
     }
 
     function _deployRedPacket() internal returns (address redPacket) {
@@ -349,6 +357,12 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
         redPacketCreator[redPacket] = msg.sender;
 
         emit RedPacketCreated(redPacket, msg.sender);
+    }
+
+    function setFeeShareDenominator(uint256 _denominator) external onlyOwner {
+        if (_denominator == 0) revert InvalidFeeConfig();
+        feeShareDenominator = _denominator;
+        emit FeeDenominatorUpdated(_denominator);
     }
 
     receive() external payable {}

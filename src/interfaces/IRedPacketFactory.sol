@@ -1,40 +1,16 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.26;
-import "./IRedPacket.sol";
+
+import "./types.sol";
 
 interface IRedPacketFactory {
-    // 使用一个枚举来标识组件类型
     enum ComponentType {
         Access,
         Trigger,
         Distributor
     }
 
-    /// Errors
-    error EmptyConfigs();
-    error ZeroBeaconAddress();
-    error ZeroPermitAddress();
-    error NoAssets();
-    error InvalidShares();
-    error InvalidDistributor();
-    error NoAccessControl();
-    error InvalidAccessValidator();
-    error InvalidTokenAmount(address);
-    error InvalidEthAmount(uint256 expectedEthValue);
-    error EthTransferFailed();
-    error InvalidFeeRate();
-    error InvalidFeeReceiver();
-    error InvalidComponent(ComponentType componentType, address component);
-    error ZeroAddress();
-
-    /// Events
-    event RedPacketCreated(
-        address indexed redPacket, // 红包合约地址
-        address indexed creator // 创建者
-    );
-
-    event FeeConfigUpdated(address indexed feeReceiver, uint256 feeRate);
-    event NFTFlatFeeUpdated(uint256 nftFlatFee);
+    event RedPacketCreated(address indexed redPacket, address indexed creator);
     event ComponentRegistered(
         ComponentType indexed componentType,
         address indexed component
@@ -43,6 +19,24 @@ interface IRedPacketFactory {
         ComponentType indexed componentType,
         address indexed component
     );
+    event FeeReceiverUpdated(address indexed feeReceiver);
+    event FeeDenominatorUpdated(uint256 denominator);
+
+    error ZeroBeaconAddress();
+    error ZeroPermitAddress();
+    error InvalidFeeReceiver();
+    error InvalidPriceFeed();
+    error InvalidPrice();
+    error ZeroAddress();
+    error EmptyConfigs();
+    error NoAssets();
+    error InvalidShares();
+    error NoAccessControl();
+    error InvalidTokenAmount(address token);
+    error InvalidComponent(ComponentType componentType, address component);
+    error InvalidEthAmount(uint256 required);
+    error EthTransferFailed();
+    error InvalidFeeConfig();
 
     function beacon() external view returns (address); // Beacon地址
 
@@ -53,12 +47,20 @@ interface IRedPacketFactory {
 
     function feeReceiver() external view returns (address);
 
-    function feeRate() external view returns (uint256);
-
-    function setFeeConfig(address _feeReceiver, uint256 _feeRate) external;
-
     function createRedPacket(
         RedPacketConfig[] calldata configs,
         bytes calldata permit
     ) external payable returns (address redPacket); // 返回红包合约地址
+
+    /// @notice 计算指定份数的手续费（以ETH为单位）
+    /// @param shares 红包份数
+    /// @return feeInETH 手续费（以ETH为单位）
+    /// @return feeInUSD 手续费（以USD为单位，6位小数）
+    /// @return ethPrice ETH/USD价格（8位小数）
+    function calculateFee(
+        uint256 shares
+    )
+        external
+        view
+        returns (uint256 feeInETH, uint256 feeInUSD, int256 ethPrice);
 }

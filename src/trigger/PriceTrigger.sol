@@ -3,7 +3,7 @@ pragma solidity 0.8.26;
 
 import {ITrigger} from "../interfaces/ITrigger.sol";
 
-import {AggregatorV3Interface} from "../interfaces/IAggregator.sol";
+import {IAggregatorV3} from "../interfaces/IAggregatorV3.sol";
 
 /// @title PriceTrigger
 /// @notice Validates if token price meets the requirement
@@ -11,7 +11,7 @@ contract PriceTrigger is ITrigger {
     /// @notice Unused for now. Heart beat duration(seconds) of price feed, according to https://docs.chain.link/data-feeds/price-feeds/addresses
     // uint256 public priceFeedHeartbeat;
     /// @notice L2 Sequencer feed, according to https://docs.chain.link/data-feeds/l2-sequencer-feeds
-    AggregatorV3Interface immutable sequencer;
+    IAggregatorV3 immutable sequencer;
     /// @notice L2 Sequencer grace period
     uint256 private constant GRACE_PERIOD_TIME = 3600;
 
@@ -41,7 +41,7 @@ contract PriceTrigger is ITrigger {
     }
 
     constructor(address _sequencer) {
-        sequencer = AggregatorV3Interface(_sequencer);
+        sequencer = IAggregatorV3(_sequencer);
     }
 
     function validate(bytes calldata triggerData) external view returns (bool) {
@@ -79,7 +79,7 @@ contract PriceTrigger is ITrigger {
             /*uint startedAt*/,
             /*uint timeStamp*/,
             /*uint80 answeredInRound*/
-        ) = AggregatorV3Interface(priceFeed).latestRoundData();
+        ) = IAggregatorV3(priceFeed).latestRoundData();
 
         if (_price <= 0) {
             revert InvalidFeedPrice(_price);
