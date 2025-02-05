@@ -248,14 +248,19 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
         RedPacketConfig[] calldata configs,
         bytes calldata permit
     ) internal returns (uint256 expectedEthValue, uint256 totalFee) {
-        (
-            IPermit2.PermitBatchTransferFrom memory permitBatch,
-            bytes memory signature
-        ) = abi.decode(permit, (IPermit2.PermitBatchTransferFrom, bytes));
+        IPermit2.PermitBatchTransferFrom memory permitBatch;
+        bytes memory signature;
+        IPermit2.SignatureTransferDetails[] memory transferDetails;
+        if (permit.length > 0) {
+            (permitBatch, signature) = abi.decode(
+                permit,
+                (IPermit2.PermitBatchTransferFrom, bytes)
+            );
 
-        IPermit2.SignatureTransferDetails[] memory transferDetails = new IPermit2.SignatureTransferDetails[](
-            permitBatch.permitted.length // 为每个ERC20资产预留fee转账的空间
-        );
+            transferDetails = new IPermit2.SignatureTransferDetails[](
+                permitBatch.permitted.length
+            );
+        }
 
         uint256 transferDetailsIndex = 0;
 
@@ -302,8 +307,8 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
     function _handleNFTTransfers(
         address redPacket,
         RedPacketConfig[] calldata configs
-    ) internal returns (uint256 nftFee) {
-        uint256 nftCount = 0;
+    ) internal returns (uint256 totalNftFee) {
+        uint256 nftCount;
 
         for (uint256 i = 0; i < configs.length; i++) {
             for (uint256 j = 0; j < configs[i].assets.length; j++) {
@@ -329,11 +334,11 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
             }
         }
 
-        return nftCount * nftFlatFee;
+        totalNftFee = nftCount * nftFlatFee;
     }
 
     function _deployRedPacket() internal returns (address redPacket) {
-        redPacket = address(new BeaconProxy(address(beacon), ""));
+        redPacket = address(new BeaconProxy(beacon, ""));
 
         if (!isCreator[msg.sender]) {
             creators.push(msg.sender);
