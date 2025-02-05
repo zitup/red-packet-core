@@ -58,13 +58,6 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
         ETH_USD_FEED = IAggregatorV3(_ethUsdFeed);
     }
 
-    // 设置协议费接收地址
-    function setFeeReceiver(address _feeReceiver) external onlyOwner {
-        if (_feeReceiver == address(0)) revert InvalidFeeReceiver();
-        feeReceiver = _feeReceiver;
-        emit FeeReceiverUpdated(_feeReceiver);
-    }
-
     // Getter functions
     /// @notice 获取创建者总数
     function getCreatorsCount() external view returns (uint256) {
@@ -116,28 +109,38 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
         return _calculateFee(shares);
     }
 
-    function _calculateFee(
-        uint256 shares
-    )
-        internal
-        view
-        returns (uint256 feeInETH, uint256 feeInUSD, int256 ethPrice)
-    {
-        // 获取最新的ETH/USD价格
-        (, ethPrice, , , ) = ETH_USD_FEED.latestRoundData();
-        if (ethPrice <= 0) revert InvalidPrice();
+    // 设置协议费接收地址
+    function setFeeReceiver(address _feeReceiver) external onlyOwner {
+        if (_feeReceiver == address(0)) revert InvalidFeeReceiver();
+        feeReceiver = _feeReceiver;
+        emit FeeReceiverUpdated(_feeReceiver);
+    }
 
-        // 计算以USD计价的总费用（每份0.1U）
-        // 例如：10份 * (1/10)U = 1U
-        feeInUSD = shares * (1e6 / feeShareDenominator); // 结果保持6位小数
+    function setFeeShareDenominator(uint256 _denominator) external onlyOwner {
+        if (_denominator == 0) revert InvalidFeeConfig();
+        feeShareDenominator = _denominator;
+        emit FeeDenominatorUpdated(_denominator);
+    }
 
-        // 将USD费用转换为ETH
-        // 1. 将ETH价格转换为1U对应的ETH数量（1/price）
-        // 2. 将这个比例应用到我们的feeInUSD上
-        // ethPrice是ETH/USD价格，带有8位小数
-        uint256 priceScaled = uint256(ethPrice) * 1e10; // 8位小数 -> 18位小数
-        uint256 oneUsdInEth = 1e36 / priceScaled; // 1e18 * 1e18 / priceScaled，得到1U对应的ETH数量（18位小数）
-        feeInETH = (feeInUSD * oneUsdInEth) / 1e6; // feeInUSD（6位小数）* oneUsdInEth（18位小数）/ 1e6 = ETH数量（18位小数）
+    function registerComponents(
+        ComponentType componentType,
+        address[] calldata components
+    ) external onlyOwner {
+        for (uint i = 0; i < components.length; i++) {
+            if (components[i] == address(0)) revert ZeroAddress();
+            isRegistered[componentType][components[i]] = true;
+            emit ComponentRegistered(componentType, components[i]);
+        }
+    }
+
+    function unregisterComponents(
+        ComponentType componentType,
+        address[] calldata components
+    ) external onlyOwner {
+        for (uint i = 0; i < components.length; i++) {
+            isRegistered[componentType][components[i]] = false;
+            emit ComponentUnregistered(componentType, components[i]);
+        }
     }
 
     function createRedPacket(
@@ -161,27 +164,6 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
 
         // # 4. 初始化红包合约
         IRedPacket(redPacket).initialize(configs, msg.sender);
-    }
-
-    function registerComponents(
-        ComponentType componentType,
-        address[] calldata components
-    ) external onlyOwner {
-        for (uint i = 0; i < components.length; i++) {
-            if (components[i] == address(0)) revert ZeroAddress();
-            isRegistered[componentType][components[i]] = true;
-            emit ComponentRegistered(componentType, components[i]);
-        }
-    }
-
-    function unregisterComponents(
-        ComponentType componentType,
-        address[] calldata components
-    ) external onlyOwner {
-        for (uint i = 0; i < components.length; i++) {
-            isRegistered[componentType][components[i]] = false;
-            emit ComponentUnregistered(componentType, components[i]);
-        }
     }
 
     // 简化验证逻辑
@@ -236,6 +218,20 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
                 config.base.distribute.distributor
             );
         }
+    }
+
+    function _deployRedPacket() internal returns (address redPacket) {
+        redPacket = address(new BeaconProxy(beacon, ""));
+
+        if (!isCreator[msg.sender]) {
+            creators.push(msg.sender);
+            isCreator[msg.sender] = true;
+        }
+
+        redPackets[msg.sender].push(redPacket);
+        redPacketCreator[redPacket] = msg.sender;
+
+        emit RedPacketCreated(redPacket, msg.sender);
     }
 
     function _transferAssets(
@@ -345,24 +341,28 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
         }
     }
 
-    function _deployRedPacket() internal returns (address redPacket) {
-        redPacket = address(new BeaconProxy(beacon, ""));
+    function _calculateFee(
+        uint256 shares
+    )
+        internal
+        view
+        returns (uint256 feeInETH, uint256 feeInUSD, int256 ethPrice)
+    {
+        // 获取最新的ETH/USD价格
+        (, ethPrice, , , ) = ETH_USD_FEED.latestRoundData();
+        if (ethPrice <= 0) revert InvalidPrice();
 
-        if (!isCreator[msg.sender]) {
-            creators.push(msg.sender);
-            isCreator[msg.sender] = true;
-        }
+        // 计算以USD计价的总费用（每份0.1U）
+        // 例如：10份 * (1/10)U = 1U
+        feeInUSD = shares * (1e6 / feeShareDenominator); // 结果保持6位小数
 
-        redPackets[msg.sender].push(redPacket);
-        redPacketCreator[redPacket] = msg.sender;
-
-        emit RedPacketCreated(redPacket, msg.sender);
-    }
-
-    function setFeeShareDenominator(uint256 _denominator) external onlyOwner {
-        if (_denominator == 0) revert InvalidFeeConfig();
-        feeShareDenominator = _denominator;
-        emit FeeDenominatorUpdated(_denominator);
+        // 将USD费用转换为ETH
+        // 1. 将ETH价格转换为1U对应的ETH数量（1/price）
+        // 2. 将这个比例应用到我们的feeInUSD上
+        // ethPrice是ETH/USD价格，带有8位小数
+        uint256 priceScaled = uint256(ethPrice) * 1e10; // 8位小数 -> 18位小数
+        uint256 oneUsdInEth = 1e36 / priceScaled; // 1e18 * 1e18 / priceScaled，得到1U对应的ETH数量（18位小数）
+        feeInETH = (feeInUSD * oneUsdInEth) / 1e6; // feeInUSD（6位小数）* oneUsdInEth（18位小数）/ 1e6 = ETH数量（18位小数）
     }
 
     receive() external payable {}
