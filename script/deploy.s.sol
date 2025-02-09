@@ -27,6 +27,7 @@ import {RandomDistributor} from "../src/distributor/RandomDistributor.sol";
 // Mock Contracts
 import {Permit2 as MockPermit2} from "../src/mocks/MockPermit2/Permit2.sol";
 import {MockAggregatorV3} from "../src/mocks/MockAggregatorV3.sol";
+import {MockMulticall3} from "../src/mocks/MockMulticall3.sol";
 
 contract Deploy is Script {
     // 各链上的 Permit2 地址
@@ -144,6 +145,10 @@ contract Deploy is Script {
                 salt: bytes32(uint256(5))
             }();
             ETH_USD_FEED[block.chainid] = address(mockPriceFeed);
+
+            MockMulticall3 mockMulticall3 = new MockMulticall3{
+                salt: bytes32(uint256(6))
+            }();
         }
 
         // 6. 使用 create2 部署工厂合约

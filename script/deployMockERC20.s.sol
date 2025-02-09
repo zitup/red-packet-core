@@ -16,7 +16,7 @@ contract CounterScript is Script {
             "MockERC20",
             "MockERC20"
         );
-        mockERC20.mint(msg.sender, 1000 * 10 ** 18);
+        mockERC20.mint(msg.sender, 1e10 * 10 ** 18);
 
         vm.stopBroadcast();
     }
