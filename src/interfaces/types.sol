@@ -90,3 +90,10 @@ struct RedPacketConfig {
 // struct CustomRedPacketConfig {
 //     RedPacketConfig[] subRedPackets; // 子红包列表
 // }
+
+struct RedPacketInfo {
+    address creator;
+    RedPacketConfig[] configs;
+    uint256 createTime;
+    uint256[] claimedShares;
+}

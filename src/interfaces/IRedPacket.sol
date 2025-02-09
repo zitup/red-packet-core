@@ -41,6 +41,11 @@ interface IRedPacket {
         address _creator
     ) external;
 
+    function getRedPacketInfo()
+        external
+        view
+        returns (RedPacketInfo memory redPacketInfo);
+
     function claim(
         uint256 redPacketIndex,
         bytes[] calldata accessProofs

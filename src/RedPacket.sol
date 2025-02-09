@@ -23,7 +23,6 @@ contract RedPacket is IRedPacket, Initializable, ReentrancyGuard {
     address public creator;
     RedPacketConfig[] public configs;
     uint256 public createTime;
-    bool public isActive;
 
     // 领取状态
     mapping(uint256 => uint256) public claimedShares; // redPacketIndex => claimed shares
@@ -44,8 +43,6 @@ contract RedPacket is IRedPacket, Initializable, ReentrancyGuard {
     }
 
     modifier whenActive(uint256 redPacketIndex) {
-        require(isActive, "RP: Not active");
-
         uint256 startTime = configs[redPacketIndex].base.startTime;
         uint256 durationTime = configs[redPacketIndex].base.durationTime;
         require(block.timestamp >= startTime, "RP: Not started");
@@ -65,11 +62,126 @@ contract RedPacket is IRedPacket, Initializable, ReentrancyGuard {
         }
         creator = _creator;
         createTime = block.timestamp;
-        isActive = true;
     }
 
-    /// Core functions
-    // 领取红包
+    function getRedPacketInfo(
+        uint256 redPacketIndex
+    ) external view returns (RedPacketInfo memory redPacketInfo) {
+        RedPacketConfig[] memory config = new RedPacketConfig[](1);
+        config[0] = configs[redPacketIndex];
+        uint256[] memory claimedShare = new uint256[](1);
+        claimedShare[0] = claimedShares[redPacketIndex];
+
+        redPacketInfo = RedPacketInfo({
+            creator: creator,
+            configs: config,
+            createTime: createTime,
+            claimedShares: claimedShare
+        });
+    }
+
+    function getRedPacketInfo()
+        external
+        view
+        returns (RedPacketInfo memory redPacketInfo)
+    {
+        uint256 totalPackets = configs.length;
+        uint256[] memory allClaimedShares = new uint256[](totalPackets);
+        for (uint256 i = 0; i < totalPackets; i++) {
+            allClaimedShares[i] = claimedShares[i];
+        }
+
+        redPacketInfo = RedPacketInfo({
+            creator: creator,
+            configs: configs,
+            createTime: createTime,
+            claimedShares: allClaimedShares
+        });
+    }
+
+    /// @notice 创建者一次性提取所有资产
+    /// @dev 只有在所有红包过期后才能调用
+    /// @param tokens 要提取的ERC20代币地址列表
+    /// @param nfts NFT代币提取配置，包含合约地址和tokenId
+    /// @param erc1155s ERC1155代币提取配置，包含合约地址和tokenId
+    /// @param recipient 接受者地址
+    function withdrawAllAssets(
+        address[] calldata tokens,
+        NFTInfo[] calldata nfts,
+        ERC1155Info[] calldata erc1155s,
+        address recipient
+    ) external onlyCreator nonReentrant {
+        if (recipient == address(0)) {
+            recipient = msg.sender;
+        }
+
+        // 检查红包是否已过期
+        if (!isExpired()) revert NotExpired();
+
+        address redPacket = address(this);
+
+        // 提取原生代币
+        uint256 balance = redPacket.balance;
+        if (balance > 0) {
+            (bool success, ) = recipient.call{value: balance}("");
+            if (!success) revert EthTransferFailed();
+        }
+
+        // 提取ERC20代币
+        for (uint256 i = 0; i < tokens.length; i++) {
+            uint256 tokenBalance = IERC20(tokens[i]).balanceOf(redPacket);
+            if (tokenBalance > 0) {
+                IERC20(tokens[i]).safeTransfer(recipient, tokenBalance);
+            }
+        }
+
+        // 提取NFT
+        for (uint256 i = 0; i < nfts.length; i++) {
+            if (IERC721(nfts[i].token).ownerOf(nfts[i].tokenId) == redPacket) {
+                IERC721(nfts[i].token).safeTransferFrom(
+                    redPacket,
+                    recipient,
+                    nfts[i].tokenId
+                );
+            }
+        }
+
+        // 提取ERC1155
+        for (uint256 i = 0; i < erc1155s.length; i++) {
+            uint256 tokenBalance = IERC1155(erc1155s[i].token).balanceOf(
+                redPacket,
+                erc1155s[i].tokenId
+            );
+            if (tokenBalance > 0) {
+                IERC1155(erc1155s[i].token).safeTransferFrom(
+                    redPacket,
+                    recipient,
+                    erc1155s[i].tokenId,
+                    tokenBalance,
+                    ""
+                );
+            }
+        }
+    }
+
+    // 查询功能
+    /// @notice 检查所有红包是否已过期
+    function isExpired() public view returns (bool) {
+        uint256 totalRedPackets = configs.length;
+        for (uint256 i = 0; i < totalRedPackets; i++) {
+            if (
+                block.timestamp <=
+                configs[i].base.startTime + configs[i].base.durationTime
+            ) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /// @notice 领取红包
+    /// @param redPacketIndex 红包索引
+    /// @param accessProofs 访问控制证明
     function claim(
         uint256 redPacketIndex,
         bytes[] calldata accessProofs
@@ -209,115 +321,6 @@ contract RedPacket is IRedPacket, Initializable, ReentrancyGuard {
                 );
             }
         }
-    }
-
-    /// @notice 创建者一次性提取所有资产
-    /// @dev 只有在所有红包过期后才能调用
-    /// @param tokens 要提取的ERC20代币地址列表
-    /// @param nfts NFT代币提取配置，包含合约地址和tokenId
-    /// @param erc1155s ERC1155代币提取配置，包含合约地址和tokenId
-    /// @param recipient 接受者地址
-    function withdrawAllAssets(
-        address[] calldata tokens,
-        NFTInfo[] calldata nfts,
-        ERC1155Info[] calldata erc1155s,
-        address recipient
-    ) external onlyCreator nonReentrant {
-        if (recipient == address(0)) {
-            recipient = msg.sender;
-        }
-
-        // 检查红包是否已过期
-        if (!isExpired()) revert NotExpired();
-
-        address redPacket = address(this);
-
-        // 提取原生代币
-        uint256 balance = redPacket.balance;
-        if (balance > 0) {
-            (bool success, ) = recipient.call{value: balance}("");
-            if (!success) revert EthTransferFailed();
-        }
-
-        // 提取ERC20代币
-        for (uint256 i = 0; i < tokens.length; i++) {
-            uint256 tokenBalance = IERC20(tokens[i]).balanceOf(redPacket);
-            if (tokenBalance > 0) {
-                IERC20(tokens[i]).safeTransfer(recipient, tokenBalance);
-            }
-        }
-
-        // 提取NFT
-        for (uint256 i = 0; i < nfts.length; i++) {
-            if (IERC721(nfts[i].token).ownerOf(nfts[i].tokenId) == redPacket) {
-                IERC721(nfts[i].token).safeTransferFrom(
-                    redPacket,
-                    recipient,
-                    nfts[i].tokenId
-                );
-            }
-        }
-
-        // 提取ERC1155
-        for (uint256 i = 0; i < erc1155s.length; i++) {
-            uint256 tokenBalance = IERC1155(erc1155s[i].token).balanceOf(
-                redPacket,
-                erc1155s[i].tokenId
-            );
-            if (tokenBalance > 0) {
-                IERC1155(erc1155s[i].token).safeTransferFrom(
-                    redPacket,
-                    recipient,
-                    erc1155s[i].tokenId,
-                    tokenBalance,
-                    ""
-                );
-            }
-        }
-    }
-
-    // 查询功能
-    /// @notice 检查所有红包是否已过期
-    function isExpired() public view returns (bool) {
-        uint256 totalRedPackets = configs.length;
-        for (uint256 i = 0; i < totalRedPackets; i++) {
-            if (
-                block.timestamp <=
-                configs[i].base.startTime + configs[i].base.durationTime
-            ) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    function getRemainingShares(
-        uint256 redPacketIndex
-    ) external view returns (uint256) {
-        return
-            configs[redPacketIndex].base.shares - claimedShares[redPacketIndex];
-    }
-
-    function getRedPacketInfo(
-        uint256 redPacketIndex
-    )
-        external
-        view
-        returns (
-            address _creator,
-            RedPacketConfig memory config,
-            uint256 _createTime,
-            bool _isActive,
-            uint256 _claimedShares
-        )
-    {
-        return (
-            creator,
-            configs[redPacketIndex],
-            createTime,
-            isActive,
-            claimedShares[redPacketIndex]
-        );
     }
 
     receive() external payable {}

@@ -80,6 +80,50 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
         return redPacketCreator[redPacket];
     }
 
+    /// @notice 获取所有未过期红包
+    /// @return activeRedPackets 所有未过期红包信息
+    function getActiveRedPackets()
+        external
+        view
+        returns (RedPacketInfo[] memory)
+    {
+        address[] memory memCreators = creators;
+        uint256 creatorsCount = memCreators.length;
+
+        uint256 maxSize = 0;
+        for (uint256 i = 0; i < creatorsCount; i++) {
+            maxSize += redPackets[memCreators[i]].length;
+        }
+
+        // 创建一个临时数组来存储结果
+        RedPacketInfo[] memory tempRedPackets = new RedPacketInfo[](maxSize);
+        uint256 count;
+
+        {
+            // 遍历并收集未过期的红包
+            for (uint256 i = 0; i < creatorsCount; i++) {
+                address[] memory creatorRedPackets = redPackets[memCreators[i]];
+                for (uint256 j = 0; j < creatorRedPackets.length; j++) {
+                    address redPacket = creatorRedPackets[j];
+                    if (!IRedPacket(redPacket).isExpired()) {
+                        RedPacketInfo memory redPacketInfo = IRedPacket(
+                            redPacket
+                        ).getRedPacketInfo();
+                        tempRedPackets[count++] = redPacketInfo;
+                    }
+                }
+            }
+        }
+
+        // 创建最终大小的数组
+        RedPacketInfo[] memory activeRedPackets = new RedPacketInfo[](count);
+        for (uint256 i = 0; i < count; i++) {
+            activeRedPackets[i] = tempRedPackets[i];
+        }
+
+        return activeRedPackets;
+    }
+
     /// @notice 获取指定组件类型的所有已注册组件
     /// @param componentType 组件类型
     /// @param components 要检查的组件地址列表
