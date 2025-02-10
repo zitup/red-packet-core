@@ -1,19 +1,69 @@
-## Foundry
+# Crypto Red Packet
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+A decentralized and customizable red packet (红包) system built on blockchain technology. This project combines traditional red packet culture with modern blockchain features, offering a flexible and secure way to distribute tokens and NFTs.
 
-Foundry consists of:
+<!-- Dapp page: https://bless3.vercel.app/, mainly developed by AI. -->
 
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+## Key Features
 
-## Documentation
+### Flexible Asset Support
 
-https://book.getfoundry.sh/
+- Support for multiple asset types:
+  - Native tokens (ETH)
+  - ERC20 tokens
+  - ERC721 NFTs
+  - ERC1155 NFTs
+- Multiple assets can be included in a single red packet
 
-## Usage
+### Advanced Distribution Rules
+
+- Fixed distribution: Equal amounts for all recipients
+- Random distribution: Random amounts with customizable minimum values
+- Support for future distribution strategies through modular design
+
+### Customizable Access Control
+
+- Code-based access: Recipients need a specific code to claim
+- Token holder access: Only holders of specific tokens can claim
+- Whitelist access: Only whitelisted addresses can claim
+- Lucky draw access: Random chance to claim based on probability
+- Generic access: Custom validation logic through smart contracts
+
+### Trigger Conditions
+
+- Price triggers: Only claimable when token price meets conditions
+- State triggers: Claimable based on contract state
+- Extensible trigger system for custom conditions
+
+### Security Features
+
+- Permit2 integration for gasless token approvals
+- Beacon proxy pattern for upgradability
+- Comprehensive access control and validation
+- Reentrancy protection
+
+## Technical Architecture
+
+### Core Contracts
+
+- `RedPacketFactory.sol`: Main factory for creating and managing red packets
+- `RedPacket.sol`: Implementation of red packet logic
+- Various validator contracts for access control and triggers
+
+### Components
+
+- Access Control System
+- Trigger System
+- Distribution System
+- Asset Management System
+
+## Development
+
+### Prerequisites
+
+- Foundry toolkit
+- Node.js and npm/yarn
+- Git
 
 ### Build
 
@@ -27,40 +77,16 @@ $ forge build
 $ forge test
 ```
 
-### Format
-
-```shell
-$ forge fmt
-```
-
-### Gas Snapshots
-
-```shell
-$ forge snapshot
-```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
 ### Deploy
 
 ```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
+$ forge script script/deploy.s.sol:Deploy --rpc-url <your_rpc_url> --private-key <your_private_key>
 ```
 
-### Cast
+## Security
 
-```shell
-$ cast <subcommand>
-```
+- Under development, not thoroughly tested
 
-### Help
+## License
 
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
+BUSL-1.1
