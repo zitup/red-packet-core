@@ -40,11 +40,6 @@ interface IRedPacketFactory {
 
     function beacon() external view returns (address); // Beacon地址
 
-    function redPackets(
-        address user,
-        uint256 index
-    ) external view returns (address);
-
     function feeReceiver() external view returns (address);
 
     function createRedPacket(

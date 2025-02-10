@@ -24,14 +24,12 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
     // 每份红包的费用分母 (10表示0.1U, 100表示0.01U)
     uint256 public feeShareDenominator = 10;
 
-    // 存储所有创建者地址
-    address[] public creators;
-    // 用于检查地址是否已经是创建者
-    mapping(address => bool) public isCreator;
-    // creator => redPackets
-    mapping(address => address[]) public redPackets;
-    // redPacket => creator
-    mapping(address => address) public redPacketCreator;
+    // 创建者数量
+    uint256 public creatorsCount;
+    // 所有红包
+    address[] public redPackets;
+    // 创建者的红包索引映射
+    mapping(address => uint256[]) private creatorRedPacketIndices;
 
     // 协议费接收地址
     address public feeReceiver;
@@ -58,70 +56,17 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
         ETH_USD_FEED = IAggregatorV3(_ethUsdFeed);
     }
 
-    // Getter functions
-    /// @notice 获取创建者总数
-    function getCreatorsCount() external view returns (uint256) {
-        return creators.length;
-    }
-
     /// @notice 获取指定创建者的所有红包地址
     /// @param creator 创建者地址
     function getRedPackets(
         address creator
     ) external view returns (address[] memory) {
-        return redPackets[creator];
-    }
-
-    /// @notice 获取指定红包的创建者
-    /// @param redPacket 红包地址
-    function getRedPacketCreator(
-        address redPacket
-    ) external view returns (address) {
-        return redPacketCreator[redPacket];
-    }
-
-    /// @notice 获取所有未过期红包
-    /// @return activeRedPackets 所有未过期红包信息
-    function getActiveRedPackets()
-        external
-        view
-        returns (RedPacketInfo[] memory)
-    {
-        address[] memory memCreators = creators;
-        uint256 creatorsCount = memCreators.length;
-
-        uint256 maxSize = 0;
-        for (uint256 i = 0; i < creatorsCount; i++) {
-            maxSize += redPackets[memCreators[i]].length;
+        uint256[] memory indices = creatorRedPacketIndices[creator];
+        address[] memory ownedRedPackets = new address[](indices.length);
+        for (uint256 i = 0; i < indices.length; i++) {
+            ownedRedPackets[i] = redPackets[indices[i]];
         }
-
-        // 创建一个临时数组来存储结果
-        RedPacketInfo[] memory tempRedPackets = new RedPacketInfo[](maxSize);
-        uint256 count;
-
-        {
-            // 遍历并收集未过期的红包
-            for (uint256 i = 0; i < creatorsCount; i++) {
-                address[] memory creatorRedPackets = redPackets[memCreators[i]];
-                for (uint256 j = 0; j < creatorRedPackets.length; j++) {
-                    address redPacket = creatorRedPackets[j];
-                    if (!IRedPacket(redPacket).isExpired()) {
-                        RedPacketInfo memory redPacketInfo = IRedPacket(
-                            redPacket
-                        ).getRedPacketInfo();
-                        tempRedPackets[count++] = redPacketInfo;
-                    }
-                }
-            }
-        }
-
-        // 创建最终大小的数组
-        RedPacketInfo[] memory activeRedPackets = new RedPacketInfo[](count);
-        for (uint256 i = 0; i < count; i++) {
-            activeRedPackets[i] = tempRedPackets[i];
-        }
-
-        return activeRedPackets;
+        return ownedRedPackets;
     }
 
     /// @notice 获取指定组件类型的所有已注册组件
@@ -267,15 +212,15 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
     function _deployRedPacket() internal returns (address redPacket) {
         redPacket = address(new BeaconProxy(beacon, ""));
 
-        if (!isCreator[msg.sender]) {
-            creators.push(msg.sender);
-            isCreator[msg.sender] = true;
+        address creator = _msgSender();
+        if (creatorRedPacketIndices[creator].length == 0) {
+            creatorsCount++;
         }
 
-        redPackets[msg.sender].push(redPacket);
-        redPacketCreator[redPacket] = msg.sender;
+        redPackets.push(redPacket);
+        creatorRedPacketIndices[creator].push(redPackets.length - 1);
 
-        emit RedPacketCreated(redPacket, msg.sender);
+        emit RedPacketCreated(redPacket, creator);
     }
 
     function _transferAssets(

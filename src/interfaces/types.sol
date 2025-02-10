@@ -96,4 +96,5 @@ struct RedPacketInfo {
     RedPacketConfig[] configs;
     uint256 createTime;
     uint256[] claimedShares;
+    bool isExpired;
 }

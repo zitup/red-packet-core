@@ -64,22 +64,6 @@ contract RedPacket is IRedPacket, Initializable, ReentrancyGuard {
         createTime = block.timestamp;
     }
 
-    function getRedPacketInfo(
-        uint256 redPacketIndex
-    ) external view returns (RedPacketInfo memory redPacketInfo) {
-        RedPacketConfig[] memory config = new RedPacketConfig[](1);
-        config[0] = configs[redPacketIndex];
-        uint256[] memory claimedShare = new uint256[](1);
-        claimedShare[0] = claimedShares[redPacketIndex];
-
-        redPacketInfo = RedPacketInfo({
-            creator: creator,
-            configs: config,
-            createTime: createTime,
-            claimedShares: claimedShare
-        });
-    }
-
     function getRedPacketInfo()
         external
         view
@@ -95,7 +79,8 @@ contract RedPacket is IRedPacket, Initializable, ReentrancyGuard {
             creator: creator,
             configs: configs,
             createTime: createTime,
-            claimedShares: allClaimedShares
+            claimedShares: allClaimedShares,
+            isExpired: isExpired()
         });
     }
 

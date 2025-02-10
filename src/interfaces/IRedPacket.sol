@@ -36,6 +36,8 @@ interface IRedPacket {
 
     event ClaimAll(address indexed claimer, uint256 totalRedPackets);
 
+    function creator() external view returns (address);
+
     function initialize(
         RedPacketConfig[] calldata config,
         address _creator

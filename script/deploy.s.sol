@@ -102,7 +102,7 @@ contract Deploy is Script {
         address feeReceiver = vm.envAddress("FEE_RECEIVER");
 
         // 1. 部署 Access
-        verifier = new Groth16Verifier();
+        verifier = new Groth16Verifier{salt: bytes32(uint256(1))}();
         codeAccess = new CodeAccess{salt: bytes32(uint256(1))}(
             address(verifier)
         );
