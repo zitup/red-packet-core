@@ -56,6 +56,12 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
         ETH_USD_FEED = IAggregatorV3(_ethUsdFeed);
     }
 
+    /// @notice 获取所有红包地址
+    /// @return 所有红包地址列表
+    function getAllRedPackets() external view returns (address[] memory) {
+        return redPackets;
+    }
+
     /// @notice 获取指定创建者的所有红包地址
     /// @param creator 创建者地址
     function getRedPackets(
