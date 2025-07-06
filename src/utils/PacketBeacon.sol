@@ -4,29 +4,29 @@ pragma solidity 0.8.26;
 import "@oz/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
 /**
- * @title RedPacketBeacon
- * @dev This contract manages the implementation address for all red packet proxy contracts.
+ * @title PacketBeacon
+ * @dev This contract manages the implementation address for all packet proxy contracts.
  * It inherits from OpenZeppelin's UpgradeableBeacon and is designed to be owned by a 
  * multisig wallet or EOA for secure implementation upgrades.
  *
  * The beacon pattern is chosen because:
  * 1. It reduces deployment costs as all proxies share the same beacon
  * 2. It simplifies upgrades as changing the beacon's implementation updates all proxies
- * 3. It provides a centralized point of control for all red packet implementations
+ * 3. It provides a centralized point of control for all packet implementations
  *
  * Usage:
  *
     // Deploy implementation
-    RedPacketImplementation implementation = new RedPacketImplementation();
+    PacketImplementation implementation = new PacketImplementation();
     // Deploy beacon with implementation and multisig as owner
-    RedPacketBeacon beacon = new RedPacketBeacon(
+    PacketBeacon beacon = new PacketBeacon(
       address(implementation),
       multiSigAddress
     );
     // Update implementation (only owner)
     beacon.upgradeTo(newImplementationAddress);
 */
-contract RedPacketBeacon is UpgradeableBeacon {
+contract PacketBeacon is UpgradeableBeacon {
     /**
      * @dev Emitted when the beacon is deployed
      * @param implementation The initial implementation address

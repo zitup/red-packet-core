@@ -6,13 +6,13 @@ import {BeaconProxy} from "@oz/contracts/proxy/beacon/BeaconProxy.sol";
 import {IERC721} from "@oz/contracts/interfaces/IERC721.sol";
 import {IERC1155} from "@oz/contracts/interfaces/IERC1155.sol";
 import {ISignatureTransfer as IPermit2} from "@permit2/interfaces/ISignatureTransfer.sol";
-import {IRedPacketFactory} from "./interfaces/IRedPacketFactory.sol";
+import {IPacketFactory} from "./interfaces/IPacketFactory.sol";
 import {IAggregatorV3} from "./interfaces/IAggregatorV3.sol";
-import "./interfaces/IRedPacket.sol";
+import "./interfaces/IPacket.sol";
 
-/// @title RedPacketFactory
-/// @notice Factory contract for creating red packet proxies
-contract RedPacketFactory is IRedPacketFactory, Ownable {
+/// @title PacketFactory
+/// @notice Factory contract for creating packet proxies
+contract PacketFactory is IPacketFactory, Ownable {
     // Beacon合约地址
     address public immutable beacon;
 
@@ -27,9 +27,9 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
     // 创建者数量
     uint256 public creatorsCount;
     // 所有红包
-    address[] public redPackets;
+    address[] public packets;
     // 创建者的红包索引映射
-    mapping(address => uint256[]) private creatorRedPacketIndices;
+    mapping(address => uint256[]) private creatorPacketIndices;
 
     // 协议费接收地址
     address public feeReceiver;
@@ -58,21 +58,21 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
 
     /// @notice 获取所有红包地址
     /// @return 所有红包地址列表
-    function getAllRedPackets() external view returns (address[] memory) {
-        return redPackets;
+    function getAllPackets() external view returns (address[] memory) {
+        return packets;
     }
 
     /// @notice 获取指定创建者的所有红包地址
     /// @param creator 创建者地址
-    function getRedPackets(
+    function getPackets(
         address creator
     ) external view returns (address[] memory) {
-        uint256[] memory indices = creatorRedPacketIndices[creator];
-        address[] memory ownedRedPackets = new address[](indices.length);
+        uint256[] memory indices = creatorPacketIndices[creator];
+        address[] memory ownedPackets = new address[](indices.length);
         for (uint256 i = 0; i < indices.length; i++) {
-            ownedRedPackets[i] = redPackets[indices[i]];
+            ownedPackets[i] = packets[indices[i]];
         }
-        return ownedRedPackets;
+        return ownedPackets;
     }
 
     /// @notice 获取指定组件类型的所有已注册组件
@@ -138,33 +138,31 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
         }
     }
 
-    function createRedPacket(
-        RedPacketConfig[] calldata configs,
+    function createPacket(
+        PacketConfig[] calldata configs,
         bytes calldata signature
-    ) public payable returns (address redPacket) {
+    ) public payable returns (address packet) {
         if (configs.length == 0) revert EmptyConfigs();
 
         // # 1. 验证配置
         uint256 totalShares;
         for (uint i = 0; i < configs.length; i++) {
-            _validateRedPacketConfig(configs[i]);
+            _validatePacketConfig(configs[i]);
             totalShares += configs[i].base.shares;
         }
 
         // # 2. 部署红包合约
-        redPacket = _deployRedPacket();
+        packet = _deployPacket();
 
         // # 3. 处理资产转移
-        _transferAssets(redPacket, configs, signature, totalShares);
+        _transferAssets(packet, configs, signature, totalShares);
 
         // # 4. 初始化红包合约
-        IRedPacket(redPacket).initialize(configs, msg.sender);
+        IPacket(packet).initialize(configs, msg.sender);
     }
 
     // 简化验证逻辑
-    function _validateRedPacketConfig(
-        RedPacketConfig calldata config
-    ) internal view {
+    function _validatePacketConfig(PacketConfig calldata config) internal view {
         // 基础检查
         if (config.assets.length == 0) revert NoAssets();
         if (config.base.shares == 0) revert InvalidShares();
@@ -215,30 +213,30 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
         }
     }
 
-    function _deployRedPacket() internal returns (address redPacket) {
-        redPacket = address(new BeaconProxy(beacon, ""));
+    function _deployPacket() internal returns (address packet) {
+        packet = address(new BeaconProxy(beacon, ""));
 
         address creator = _msgSender();
-        if (creatorRedPacketIndices[creator].length == 0) {
+        if (creatorPacketIndices[creator].length == 0) {
             creatorsCount++;
         }
 
-        redPackets.push(redPacket);
-        creatorRedPacketIndices[creator].push(redPackets.length - 1);
+        packets.push(packet);
+        creatorPacketIndices[creator].push(packets.length - 1);
 
-        emit RedPacketCreated(redPacket, creator);
+        emit PacketCreated(packet, creator);
     }
 
     function _transferAssets(
-        address redPacket,
-        RedPacketConfig[] calldata configs,
+        address packet,
+        PacketConfig[] calldata configs,
         bytes calldata permit,
         uint256 totalShares
     ) internal {
         uint256 expectedEthValue;
-        (expectedEthValue) = _handleERC20Transfers(redPacket, configs, permit);
+        (expectedEthValue) = _handleERC20Transfers(packet, configs, permit);
 
-        _handleNFTTransfers(redPacket, configs);
+        _handleNFTTransfers(packet, configs);
 
         // 计算基于份数的手续费
         (uint256 totalFee, , ) = _calculateFee(totalShares);
@@ -249,7 +247,7 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
 
         // 转移完整ETH金额到红包合约
         if (expectedEthValue > 0) {
-            (bool success, ) = redPacket.call{value: expectedEthValue}("");
+            (bool success, ) = packet.call{value: expectedEthValue}("");
             if (!success) revert EthTransferFailed();
         }
 
@@ -261,8 +259,8 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
     }
 
     function _handleERC20Transfers(
-        address redPacket,
-        RedPacketConfig[] calldata configs,
+        address packet,
+        PacketConfig[] calldata configs,
         bytes calldata permit
     ) internal returns (uint256 expectedEthValue) {
         IPermit2.PermitBatchTransferFrom memory permitBatch;
@@ -291,7 +289,7 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
                     // 转移完整金额到红包合约
                     transferDetails[transferDetailsIndex++] = IPermit2
                         .SignatureTransferDetails({
-                            to: redPacket,
+                            to: packet,
                             requestedAmount: asset.amount
                         });
                 }
@@ -310,8 +308,8 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
     }
 
     function _handleNFTTransfers(
-        address redPacket,
-        RedPacketConfig[] calldata configs
+        address packet,
+        PacketConfig[] calldata configs
     ) internal {
         for (uint256 i = 0; i < configs.length; i++) {
             for (uint256 j = 0; j < configs[i].assets.length; j++) {
@@ -320,13 +318,13 @@ contract RedPacketFactory is IRedPacketFactory, Ownable {
                 if (asset.assetType == AssetType.ERC721) {
                     IERC721(asset.token).safeTransferFrom(
                         msg.sender,
-                        redPacket,
+                        packet,
                         asset.tokenId
                     );
                 } else if (asset.assetType == AssetType.ERC1155) {
                     IERC1155(asset.token).safeTransferFrom(
                         msg.sender,
-                        redPacket,
+                        packet,
                         asset.tokenId,
                         asset.amount,
                         ""

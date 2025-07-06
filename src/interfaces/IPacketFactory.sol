@@ -3,14 +3,14 @@ pragma solidity 0.8.26;
 
 import "./types.sol";
 
-interface IRedPacketFactory {
+interface IPacketFactory {
     enum ComponentType {
         Access,
         Trigger,
         Distributor
     }
 
-    event RedPacketCreated(address indexed redPacket, address indexed creator);
+    event PacketCreated(address indexed packet, address indexed creator);
     event ComponentRegistered(
         ComponentType indexed componentType,
         address indexed component
@@ -42,10 +42,10 @@ interface IRedPacketFactory {
 
     function feeReceiver() external view returns (address);
 
-    function createRedPacket(
-        RedPacketConfig[] calldata configs,
+    function createPacket(
+        PacketConfig[] calldata configs,
         bytes calldata permit
-    ) external payable returns (address redPacket); // 返回红包合约地址
+    ) external payable returns (address packet); // 返回红包合约地址
 
     /// @notice 计算指定份数的手续费（以ETH为单位）
     /// @param shares 红包份数

@@ -3,9 +3,9 @@ pragma solidity 0.8.26;
 
 import {Script} from "forge-std/Script.sol";
 import {console} from "forge-std/console.sol";
-import {RedPacketFactory} from "../src/RedPacketFactory.sol";
-import {IRedPacketFactory} from "../src/interfaces/IRedPacketFactory.sol";
-import {RedPacket} from "../src/RedPacket.sol";
+import {PacketFactory} from "../src/PacketFactory.sol";
+import {IPacketFactory} from "../src/interfaces/IPacketFactory.sol";
+import {Packet} from "../src/Packet.sol";
 import {UpgradeableBeacon} from "@oz/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
 // Access
@@ -38,9 +38,9 @@ contract Deploy is Script {
     mapping(uint256 => address) internal ETH_USD_FEED;
 
     // 存储部署的合约地址
-    RedPacketFactory public factory;
+    PacketFactory public factory;
     UpgradeableBeacon public beacon;
-    RedPacket public implementation;
+    Packet public implementation;
 
     // Access 合约
     Groth16Verifier public verifier;
@@ -125,7 +125,7 @@ contract Deploy is Script {
         bytes32 implementationSalt = keccak256(
             abi.encodePacked(IMPLEMENTATION_SALT)
         );
-        implementation = new RedPacket{salt: implementationSalt}();
+        implementation = new Packet{salt: implementationSalt}();
 
         // 5. 使用 create2 部署 Beacon
         bytes32 beaconSalt = keccak256(abi.encodePacked(BEACON_SALT));
@@ -153,7 +153,7 @@ contract Deploy is Script {
 
         // 6. 使用 create2 部署工厂合约
         bytes32 factorySalt = keccak256(abi.encodePacked(FACTORY_SALT));
-        factory = new RedPacketFactory{salt: factorySalt}(
+        factory = new PacketFactory{salt: factorySalt}(
             msg.sender,
             address(beacon),
             PERMIT2[block.chainid],
@@ -172,7 +172,7 @@ contract Deploy is Script {
         accesses[4] = address(stateAccess);
         accesses[5] = address(verifier);
         factory.registerComponents(
-            IRedPacketFactory.ComponentType.Access,
+            IPacketFactory.ComponentType.Access,
             accesses
         );
 
@@ -181,7 +181,7 @@ contract Deploy is Script {
         triggers[0] = address(priceTrigger);
         triggers[1] = address(stateTrigger);
         factory.registerComponents(
-            IRedPacketFactory.ComponentType.Trigger,
+            IPacketFactory.ComponentType.Trigger,
             triggers
         );
 
@@ -190,7 +190,7 @@ contract Deploy is Script {
         distributors[0] = address(randomDistributor);
         distributors[1] = address(fixedDistributor);
         factory.registerComponents(
-            IRedPacketFactory.ComponentType.Distributor,
+            IPacketFactory.ComponentType.Distributor,
             distributors
         );
     }

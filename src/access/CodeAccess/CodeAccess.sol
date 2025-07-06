@@ -23,7 +23,7 @@ contract CodeAccess is IAccess {
         bytes32 codeHash = abi.decode(configData, (bytes32));
         uint256[3] memory pubSingles;
         pubSingles[0] = uint256(codeHash);
-        pubSingles[1] = uint256(uint160(msg.sender)); // redPacket address
+        pubSingles[1] = uint256(uint160(msg.sender)); // packet address
         pubSingles[2] = uint256(uint160(user));
 
         bool success = verifier.verifyProof(_pA, _pB, _pC, pubSingles);

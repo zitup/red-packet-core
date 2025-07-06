@@ -5,7 +5,7 @@ import "./IAccess.sol";
 import "./IDistributor.sol";
 import "./types.sol";
 
-interface IRedPacket {
+interface IPacket {
     struct NFTInfo {
         address token;
         uint256 tokenId;
@@ -30,26 +30,26 @@ interface IRedPacket {
     /// events
     event Claimed(
         address indexed claimer,
-        uint256 indexed redPacketIndex,
+        uint256 indexed packetIndex,
         DistributeResult[] result
     );
 
-    event ClaimAll(address indexed claimer, uint256 totalRedPackets);
+    event ClaimAll(address indexed claimer, uint256 totalPackets);
 
     function creator() external view returns (address);
 
     function initialize(
-        RedPacketConfig[] calldata config,
+        PacketConfig[] calldata config,
         address _creator
     ) external;
 
-    function getRedPacketInfo()
+    function getPacketInfo()
         external
         view
-        returns (RedPacketInfo memory redPacketInfo);
+        returns (PacketInfo memory packetInfo);
 
     function claim(
-        uint256 redPacketIndex,
+        uint256 packetIndex,
         bytes[] calldata accessProofs
     ) external returns (bool);
 

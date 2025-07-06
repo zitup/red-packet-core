@@ -3,10 +3,10 @@ pragma solidity 0.8.26;
 
 import {Script} from "forge-std/Script.sol";
 import {console} from "forge-std/console.sol";
-import {RedPacket} from "../src/RedPacket.sol";
+import {Packet} from "../src/Packet.sol";
 import {UpgradeableBeacon} from "@oz/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
-contract Upgrade is Script {
+contract UpgradePacketImpl is Script {
     // Create2 salt for deterministic deployment
     bytes32 constant IMPLEMENTATION_SALT = bytes32(uint256(3));
 
@@ -19,7 +19,7 @@ contract Upgrade is Script {
         bytes32 implementationSalt = keccak256(
             abi.encodePacked(IMPLEMENTATION_SALT)
         );
-        RedPacket implementation = new RedPacket{salt: implementationSalt}();
+        Packet implementation = new Packet{salt: implementationSalt}();
         console.log("New implementation deployed at:", address(implementation));
 
         // Upgrade beacon to point to new implementation

@@ -7,30 +7,30 @@ import {IERC1155} from "@oz/contracts/interfaces/IERC1155.sol";
 import {SafeERC20} from "@oz/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Initializable} from "@oz/contracts/proxy/utils/Initializable.sol";
 import {ReentrancyGuard} from "@solmate/utils/ReentrancyGuard.sol";
-import "./interfaces/IRedPacket.sol";
+import "./interfaces/IPacket.sol";
 
 /**
- * @title RedPacket
- * @dev Implementation of the RedPacket contract
- * This contract handles the core logic for creating and claiming red packets
+ * @title Packet
+ * @dev Implementation of the Packet contract
+ * This contract handles the core logic for creating and claiming packets
  */
-contract RedPacket is IRedPacket, Initializable, ReentrancyGuard {
+contract Packet is IPacket, Initializable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     address public factory;
 
     // 基础信息
     address public creator;
-    RedPacketConfig[] public configs;
+    PacketConfig[] public configs;
     uint256 public createTime;
 
     // 领取状态
-    mapping(uint256 => uint256) public claimedShares; // redPacketIndex => claimed shares
-    mapping(uint256 => uint256) public claimedAmounts; // redPacketIndex => claimed shares
-    mapping(uint256 => mapping(address => bool)) public claimed; // redPacketIndex => user => claimed
+    mapping(uint256 => uint256) public claimedShares; // packetIndex => claimed shares
+    mapping(uint256 => uint256) public claimedAmounts; // packetIndex => claimed shares
+    mapping(uint256 => mapping(address => bool)) public claimed; // packetIndex => user => claimed
 
     // trigger验证状态
-    mapping(uint256 => bool) public triggerValidated; // redPacketIndex => isValidated
+    mapping(uint256 => bool) public triggerValidated; // packetIndex => isValidated
 
     modifier onlyFactory() {
         if (msg.sender != factory) revert NotFactory();
@@ -42,16 +42,16 @@ contract RedPacket is IRedPacket, Initializable, ReentrancyGuard {
         _;
     }
 
-    modifier whenActive(uint256 redPacketIndex) {
-        uint256 startTime = configs[redPacketIndex].base.startTime;
-        uint256 durationTime = configs[redPacketIndex].base.durationTime;
+    modifier whenActive(uint256 packetIndex) {
+        uint256 startTime = configs[packetIndex].base.startTime;
+        uint256 durationTime = configs[packetIndex].base.durationTime;
         require(block.timestamp >= startTime, "RP: Not started");
         require(block.timestamp <= startTime + durationTime, "RP: Expired");
         _;
     }
 
     function initialize(
-        RedPacketConfig[] calldata _configs,
+        PacketConfig[] calldata _configs,
         address _creator
     ) external initializer {
         factory = msg.sender;
@@ -64,10 +64,10 @@ contract RedPacket is IRedPacket, Initializable, ReentrancyGuard {
         createTime = block.timestamp;
     }
 
-    function getRedPacketInfo()
+    function getPacketInfo()
         external
         view
-        returns (RedPacketInfo memory redPacketInfo)
+        returns (PacketInfo memory packetInfo)
     {
         uint256 totalPackets = configs.length;
         uint256[] memory allClaimedShares = new uint256[](totalPackets);
@@ -75,7 +75,7 @@ contract RedPacket is IRedPacket, Initializable, ReentrancyGuard {
             allClaimedShares[i] = claimedShares[i];
         }
 
-        redPacketInfo = RedPacketInfo({
+        packetInfo = PacketInfo({
             creator: creator,
             configs: configs,
             createTime: createTime,
@@ -103,10 +103,10 @@ contract RedPacket is IRedPacket, Initializable, ReentrancyGuard {
         // 检查红包是否已过期
         if (!isExpired()) revert NotExpired();
 
-        address redPacket = address(this);
+        address packet = address(this);
 
         // 提取原生代币
-        uint256 balance = redPacket.balance;
+        uint256 balance = packet.balance;
         if (balance > 0) {
             (bool success, ) = recipient.call{value: balance}("");
             if (!success) revert EthTransferFailed();
@@ -114,7 +114,7 @@ contract RedPacket is IRedPacket, Initializable, ReentrancyGuard {
 
         // 提取ERC20代币
         for (uint256 i = 0; i < tokens.length; i++) {
-            uint256 tokenBalance = IERC20(tokens[i]).balanceOf(redPacket);
+            uint256 tokenBalance = IERC20(tokens[i]).balanceOf(packet);
             if (tokenBalance > 0) {
                 IERC20(tokens[i]).safeTransfer(recipient, tokenBalance);
             }
@@ -122,9 +122,9 @@ contract RedPacket is IRedPacket, Initializable, ReentrancyGuard {
 
         // 提取NFT
         for (uint256 i = 0; i < nfts.length; i++) {
-            if (IERC721(nfts[i].token).ownerOf(nfts[i].tokenId) == redPacket) {
+            if (IERC721(nfts[i].token).ownerOf(nfts[i].tokenId) == packet) {
                 IERC721(nfts[i].token).safeTransferFrom(
-                    redPacket,
+                    packet,
                     recipient,
                     nfts[i].tokenId
                 );
@@ -134,12 +134,12 @@ contract RedPacket is IRedPacket, Initializable, ReentrancyGuard {
         // 提取ERC1155
         for (uint256 i = 0; i < erc1155s.length; i++) {
             uint256 tokenBalance = IERC1155(erc1155s[i].token).balanceOf(
-                redPacket,
+                packet,
                 erc1155s[i].tokenId
             );
             if (tokenBalance > 0) {
                 IERC1155(erc1155s[i].token).safeTransferFrom(
-                    redPacket,
+                    packet,
                     recipient,
                     erc1155s[i].tokenId,
                     tokenBalance,
@@ -152,8 +152,8 @@ contract RedPacket is IRedPacket, Initializable, ReentrancyGuard {
     // 查询功能
     /// @notice 检查所有红包是否已过期
     function isExpired() public view returns (bool) {
-        uint256 totalRedPackets = configs.length;
-        for (uint256 i = 0; i < totalRedPackets; i++) {
+        uint256 totalPackets = configs.length;
+        for (uint256 i = 0; i < totalPackets; i++) {
             if (
                 block.timestamp <=
                 configs[i].base.startTime + configs[i].base.durationTime
@@ -165,27 +165,27 @@ contract RedPacket is IRedPacket, Initializable, ReentrancyGuard {
     }
 
     /// @notice 领取红包
-    /// @param redPacketIndex 红包索引
+    /// @param packetIndex 红包索引
     /// @param accessProofs 访问控制证明
     function claim(
-        uint256 redPacketIndex,
+        uint256 packetIndex,
         bytes[] calldata accessProofs
-    ) public whenActive(redPacketIndex) nonReentrant returns (bool) {
-        RedPacketConfig storage config = configs[redPacketIndex];
+    ) public whenActive(packetIndex) nonReentrant returns (bool) {
+        PacketConfig storage config = configs[packetIndex];
 
         // 检查是否已领取
-        if (claimed[redPacketIndex][msg.sender]) revert AlreadyClaimed();
+        if (claimed[packetIndex][msg.sender]) revert AlreadyClaimed();
 
         // 检查剩余份数
         uint256 remainingShares = config.base.shares -
-            claimedShares[redPacketIndex];
+            claimedShares[packetIndex];
         if (remainingShares == 0) revert NoRemainingShares();
 
         // 验证触发条件
-        if (!triggerValidated[redPacketIndex]) {
+        if (!triggerValidated[packetIndex]) {
             _validateTriggers(config.base.triggers);
             // 标记为已触发
-            triggerValidated[redPacketIndex] = true;
+            triggerValidated[packetIndex] = true;
         }
 
         // 验证访问控制
@@ -195,29 +195,29 @@ contract RedPacket is IRedPacket, Initializable, ReentrancyGuard {
         DistributeResult[] memory results;
         uint256 distributedAmounts;
         (results, distributedAmounts) = _calculateDistribution(
-            redPacketIndex,
+            packetIndex,
             config.base.distribute,
             config.assets,
             config.base.shares
         );
 
         // 更新状态
-        claimed[redPacketIndex][msg.sender] = true;
-        claimedShares[redPacketIndex]++;
-        claimedAmounts[redPacketIndex] += distributedAmounts;
+        claimed[packetIndex][msg.sender] = true;
+        claimedShares[packetIndex]++;
+        claimedAmounts[packetIndex] += distributedAmounts;
 
         // 转移资产
         _transferAssets(msg.sender, results);
 
-        emit Claimed(msg.sender, redPacketIndex, results);
+        emit Claimed(msg.sender, packetIndex, results);
         return true;
     }
 
     /// @notice 一次性领取所有红包
     function claimAll(bytes[][] calldata accessProofs) external nonReentrant {
-        uint256 totalRedPackets = configs.length;
+        uint256 totalPackets = configs.length;
 
-        for (uint256 i = 0; i < totalRedPackets; i++) {
+        for (uint256 i = 0; i < totalPackets; i++) {
             // 跳过已领取的红包
             if (claimed[i][msg.sender]) continue;
 
@@ -225,7 +225,7 @@ contract RedPacket is IRedPacket, Initializable, ReentrancyGuard {
             // 注意：即使某个红包领取失败，继续尝试其他红包
             claim(i, accessProofs[i]);
         }
-        emit ClaimAll(msg.sender, totalRedPackets);
+        emit ClaimAll(msg.sender, totalPackets);
     }
 
     // TODO: 这里有一个测试用例，校验三个控制的view修饰符是否起作用，通过调用一个外部控制合约，改变合约状态验证
@@ -257,7 +257,7 @@ contract RedPacket is IRedPacket, Initializable, ReentrancyGuard {
 
     // 计算分配结果
     function _calculateDistribution(
-        uint256 redPacketIndex,
+        uint256 packetIndex,
         DistributeConfig storage distribute,
         Asset[] storage assets,
         uint256 totalShares
@@ -271,8 +271,8 @@ contract RedPacket is IRedPacket, Initializable, ReentrancyGuard {
                 msg.sender,
                 assets,
                 totalShares,
-                claimedShares[redPacketIndex],
-                claimedAmounts[redPacketIndex],
+                claimedShares[packetIndex],
+                claimedAmounts[packetIndex],
                 distribute.data
             );
     }

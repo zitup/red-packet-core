@@ -4,20 +4,20 @@ pragma solidity 0.8.26;
 import {Deploy} from "../script/deploy.s.sol";
 import {Test} from "forge-std/Test.sol";
 import {Strings} from "@oz/contracts/utils/Strings.sol";
-import {RedPacket} from "../src/RedPacket.sol";
-import {IRedPacket} from "../src/interfaces/IRedPacket.sol";
+import {Packet} from "../src/Packet.sol";
+import {IPacket} from "../src/interfaces/IPacket.sol";
 import {IAggregatorV3} from "../src/interfaces/IAggregatorV3.sol";
 import {MockERC20} from "../src/mocks/MockERC20.sol";
 import {MockERC721} from "../src/mocks/MockERC721.sol";
 import {MockERC1155} from "../src/mocks/MockERC1155.sol";
-import {Asset, AssetType, BaseConfig, RedPacketConfig, AccessConfig, TriggerConfig, DistributeConfig} from "../src/interfaces/types.sol";
+import {Asset, AssetType, BaseConfig, PacketConfig, AccessConfig, TriggerConfig, DistributeConfig} from "../src/interfaces/types.sol";
 
-contract RedPacketTest is Deploy, Test {
+contract PacketTest is Deploy, Test {
     using Strings for uint256;
 
     address user;
     address user2;
-    RedPacket redPacket;
+    Packet packet;
     MockERC20 mockToken;
     MockERC721 mockNFT;
     MockERC1155 mockERC1155;
@@ -60,40 +60,40 @@ contract RedPacketTest is Deploy, Test {
         mockERC1155.mint(user2, 3, 75, "");
 
         // 部署红包合约
-        redPacket = new RedPacket();
+        packet = new Packet();
     }
 
     function test_initialize() public {
-        RedPacketConfig[] memory configs = _createRedPacketConfigs();
+        PacketConfig[] memory configs = _createPacketConfigs();
         vm.startPrank(address(factory));
-        redPacket.initialize(configs, user);
+        packet.initialize(configs, user);
         vm.stopPrank();
 
         // 验证初始化结果
-        assertEq(redPacket.factory(), address(factory));
-        assertEq(redPacket.creator(), user);
-        assertEq(redPacket.createTime(), block.timestamp);
+        assertEq(packet.factory(), address(factory));
+        assertEq(packet.creator(), user);
+        assertEq(packet.createTime(), block.timestamp);
     }
 
     function test_initialize_revert_NotFactory() public {
-        RedPacketConfig[] memory configs = _createRedPacketConfigs();
-        vm.expectRevert(IRedPacket.NotFactory.selector);
-        redPacket.initialize(configs, user);
+        PacketConfig[] memory configs = _createPacketConfigs();
+        vm.expectRevert(IPacket.NotFactory.selector);
+        packet.initialize(configs, user);
     }
 
     function test_claim_single() public {
         // 准备红包配置
-        RedPacketConfig[] memory configs = _createRedPacketConfigs();
+        PacketConfig[] memory configs = _createPacketConfigs();
         vm.startPrank(address(factory));
-        redPacket.initialize(configs, user);
+        packet.initialize(configs, user);
         vm.stopPrank();
 
         // 准备资产
         vm.startPrank(user);
-        mockToken.transfer(address(redPacket), 100 ether);
-        mockNFT.transferFrom(user, address(redPacket), 1);
-        mockERC1155.safeTransferFrom(user, address(redPacket), 1, 50, "");
-        vm.deal(address(redPacket), 1 ether);
+        mockToken.transfer(address(packet), 100 ether);
+        mockNFT.transferFrom(user, address(packet), 1);
+        mockERC1155.safeTransferFrom(user, address(packet), 1, 50, "");
+        vm.deal(address(packet), 1 ether);
         vm.stopPrank();
 
         // 准备访问证明
@@ -102,12 +102,12 @@ contract RedPacketTest is Deploy, Test {
 
         // 领取红包
         vm.startPrank(user2);
-        bool success = redPacket.claim(0, proofs);
+        bool success = packet.claim(0, proofs);
         assertTrue(success);
 
         // 验证领取结果
-        assertTrue(redPacket.claimed(0, user2));
-        assertEq(redPacket.claimedShares(0), 1);
+        assertTrue(packet.claimed(0, user2));
+        assertEq(packet.claimedShares(0), 1);
         assertEq(mockToken.balanceOf(user2), 1100 ether); // 原有1000 + 领取100
         assertEq(mockNFT.ownerOf(1), user2);
         assertEq(mockERC1155.balanceOf(user2, 1), 50);
@@ -118,21 +118,21 @@ contract RedPacketTest is Deploy, Test {
 
     function test_claim_all() public {
         // 准备多个红包配置
-        RedPacketConfig[] memory configs = new RedPacketConfig[](2);
-        configs[0] = _createRedPacketConfigs()[0];
-        configs[1] = _createRedPacketConfigs()[0];
+        PacketConfig[] memory configs = new PacketConfig[](2);
+        configs[0] = _createPacketConfigs()[0];
+        configs[1] = _createPacketConfigs()[0];
 
         vm.startPrank(address(factory));
-        redPacket.initialize(configs, user);
+        packet.initialize(configs, user);
         vm.stopPrank();
 
         // 准备资产
         vm.startPrank(user);
-        mockToken.transfer(address(redPacket), 200 ether); // 两个红包各100
-        mockNFT.transferFrom(user, address(redPacket), 1);
-        mockNFT.transferFrom(user, address(redPacket), 2);
-        mockERC1155.safeTransferFrom(user, address(redPacket), 1, 100, "");
-        vm.deal(address(redPacket), 2 ether); // 两个红包各1
+        mockToken.transfer(address(packet), 200 ether); // 两个红包各100
+        mockNFT.transferFrom(user, address(packet), 1);
+        mockNFT.transferFrom(user, address(packet), 2);
+        mockERC1155.safeTransferFrom(user, address(packet), 1, 100, "");
+        vm.deal(address(packet), 2 ether); // 两个红包各1
         vm.stopPrank();
 
         // 准备访问证明
@@ -144,13 +144,13 @@ contract RedPacketTest is Deploy, Test {
 
         // 领取所有红包
         vm.startPrank(user2);
-        redPacket.claimAll(proofs);
+        packet.claimAll(proofs);
 
         // 验证领取结果
-        assertTrue(redPacket.claimed(0, user2));
-        assertTrue(redPacket.claimed(1, user2));
-        assertEq(redPacket.claimedShares(0), 1);
-        assertEq(redPacket.claimedShares(1), 1);
+        assertTrue(packet.claimed(0, user2));
+        assertTrue(packet.claimed(1, user2));
+        assertEq(packet.claimedShares(0), 1);
+        assertEq(packet.claimedShares(1), 1);
         assertEq(mockToken.balanceOf(user2), 1200 ether); // 原有1000 + 领取200
         assertEq(mockNFT.ownerOf(1), user2);
         assertEq(mockNFT.ownerOf(2), user2);
@@ -161,14 +161,14 @@ contract RedPacketTest is Deploy, Test {
     }
 
     function test_claim_revert_AlreadyClaimed() public {
-        RedPacketConfig[] memory configs = _createRedPacketConfigs();
+        PacketConfig[] memory configs = _createPacketConfigs();
         vm.startPrank(address(factory));
-        redPacket.initialize(configs, user);
+        packet.initialize(configs, user);
         vm.stopPrank();
 
         // 准备资产
         vm.startPrank(user);
-        mockToken.transfer(address(redPacket), 100 ether);
+        mockToken.transfer(address(packet), 100 ether);
         vm.stopPrank();
 
         // 准备访问证明
@@ -177,23 +177,23 @@ contract RedPacketTest is Deploy, Test {
 
         // 第一次领取
         vm.startPrank(user2);
-        redPacket.claim(0, proofs);
+        packet.claim(0, proofs);
 
         // 第二次领取应该失败
-        vm.expectRevert(IRedPacket.AlreadyClaimed.selector);
-        redPacket.claim(0, proofs);
+        vm.expectRevert(IPacket.AlreadyClaimed.selector);
+        packet.claim(0, proofs);
         vm.stopPrank();
     }
 
     function test_claim_revert_NoRemainingShares() public {
-        RedPacketConfig[] memory configs = _createRedPacketConfigs();
+        PacketConfig[] memory configs = _createPacketConfigs();
         vm.startPrank(address(factory));
-        redPacket.initialize(configs, user);
+        packet.initialize(configs, user);
         vm.stopPrank();
 
         // 准备资产
         vm.startPrank(user);
-        mockToken.transfer(address(redPacket), 100 ether);
+        mockToken.transfer(address(packet), 100 ether);
         vm.stopPrank();
 
         // 准备访问证明
@@ -202,24 +202,24 @@ contract RedPacketTest is Deploy, Test {
 
         // 用户2领取
         vm.startPrank(user2);
-        redPacket.claim(0, proofs);
+        packet.claim(0, proofs);
         vm.stopPrank();
 
         // 创建用户3并尝试领取
         address user3 = makeAddr("user3");
         vm.startPrank(user3);
-        vm.expectRevert(IRedPacket.NoRemainingShares.selector);
-        redPacket.claim(0, proofs);
+        vm.expectRevert(IPacket.NoRemainingShares.selector);
+        packet.claim(0, proofs);
         vm.stopPrank();
     }
 
     function test_claim_revert_NotStarted() public {
         // 创建一个未来开始的红包
-        RedPacketConfig[] memory configs = _createRedPacketConfigs();
+        PacketConfig[] memory configs = _createPacketConfigs();
         configs[0].base.startTime = block.timestamp + 1 days;
 
         vm.startPrank(address(factory));
-        redPacket.initialize(configs, user);
+        packet.initialize(configs, user);
         vm.stopPrank();
 
         // 准备访问证明
@@ -229,14 +229,14 @@ contract RedPacketTest is Deploy, Test {
         // 尝试领取应该失败
         vm.startPrank(user2);
         vm.expectRevert("RP: Not started");
-        redPacket.claim(0, proofs);
+        packet.claim(0, proofs);
         vm.stopPrank();
     }
 
     function test_claim_revert_Expired() public {
-        RedPacketConfig[] memory configs = _createRedPacketConfigs();
+        PacketConfig[] memory configs = _createPacketConfigs();
         vm.startPrank(address(factory));
-        redPacket.initialize(configs, user);
+        packet.initialize(configs, user);
         vm.stopPrank();
 
         // 时间快进超过有效期
@@ -249,22 +249,22 @@ contract RedPacketTest is Deploy, Test {
         // 尝试领取应该失败
         vm.startPrank(user2);
         vm.expectRevert("RP: Expired");
-        redPacket.claim(0, proofs);
+        packet.claim(0, proofs);
         vm.stopPrank();
     }
 
     function test_withdrawAllAssets() public {
-        RedPacketConfig[] memory configs = _createRedPacketConfigs();
+        PacketConfig[] memory configs = _createPacketConfigs();
         vm.startPrank(address(factory));
-        redPacket.initialize(configs, user);
+        packet.initialize(configs, user);
         vm.stopPrank();
 
         // 准备资产
         vm.startPrank(user);
-        mockToken.transfer(address(redPacket), 100 ether);
-        mockNFT.transferFrom(user, address(redPacket), 1);
-        mockERC1155.safeTransferFrom(user, address(redPacket), 1, 50, "");
-        vm.deal(address(redPacket), 1 ether);
+        mockToken.transfer(address(packet), 100 ether);
+        mockNFT.transferFrom(user, address(packet), 1);
+        mockERC1155.safeTransferFrom(user, address(packet), 1, 50, "");
+        vm.deal(address(packet), 1 ether);
         vm.stopPrank();
 
         // 等待红包过期
@@ -274,20 +274,18 @@ contract RedPacketTest is Deploy, Test {
         address[] memory tokens = new address[](1);
         tokens[0] = address(mockToken);
 
-        IRedPacket.NFTInfo[] memory nfts = new IRedPacket.NFTInfo[](1);
-        nfts[0] = IRedPacket.NFTInfo({token: address(mockNFT), tokenId: 1});
+        IPacket.NFTInfo[] memory nfts = new IPacket.NFTInfo[](1);
+        nfts[0] = IPacket.NFTInfo({token: address(mockNFT), tokenId: 1});
 
-        IRedPacket.ERC1155Info[] memory erc1155s = new IRedPacket.ERC1155Info[](
-            1
-        );
-        erc1155s[0] = IRedPacket.ERC1155Info({
+        IPacket.ERC1155Info[] memory erc1155s = new IPacket.ERC1155Info[](1);
+        erc1155s[0] = IPacket.ERC1155Info({
             token: address(mockERC1155),
             tokenId: 1
         });
 
         // 提取资产
         vm.startPrank(user);
-        redPacket.withdrawAllAssets(tokens, nfts, erc1155s, address(0));
+        packet.withdrawAllAssets(tokens, nfts, erc1155s, address(0));
 
         // 验证提取结果
         assertEq(mockToken.balanceOf(user), 1000 ether);
@@ -299,29 +297,27 @@ contract RedPacketTest is Deploy, Test {
     }
 
     function test_withdrawAllAssets_revert_NotExpired() public {
-        RedPacketConfig[] memory configs = _createRedPacketConfigs();
+        PacketConfig[] memory configs = _createPacketConfigs();
         vm.startPrank(address(factory));
-        redPacket.initialize(configs, user);
+        packet.initialize(configs, user);
         vm.stopPrank();
 
         // 准备提取参数
         address[] memory tokens = new address[](0);
-        IRedPacket.NFTInfo[] memory nfts = new IRedPacket.NFTInfo[](0);
-        IRedPacket.ERC1155Info[] memory erc1155s = new IRedPacket.ERC1155Info[](
-            0
-        );
+        IPacket.NFTInfo[] memory nfts = new IPacket.NFTInfo[](0);
+        IPacket.ERC1155Info[] memory erc1155s = new IPacket.ERC1155Info[](0);
 
         // 尝试提取应该失败
         vm.startPrank(user);
-        vm.expectRevert(IRedPacket.NotExpired.selector);
-        redPacket.withdrawAllAssets(tokens, nfts, erc1155s, address(0));
+        vm.expectRevert(IPacket.NotExpired.selector);
+        packet.withdrawAllAssets(tokens, nfts, erc1155s, address(0));
         vm.stopPrank();
     }
 
     function test_withdrawAllAssets_revert_NotCreator() public {
-        RedPacketConfig[] memory configs = _createRedPacketConfigs();
+        PacketConfig[] memory configs = _createPacketConfigs();
         vm.startPrank(address(factory));
-        redPacket.initialize(configs, user);
+        packet.initialize(configs, user);
         vm.stopPrank();
 
         // 等待红包过期
@@ -329,29 +325,26 @@ contract RedPacketTest is Deploy, Test {
 
         // 准备提取参数
         address[] memory tokens = new address[](0);
-        IRedPacket.NFTInfo[] memory nfts = new IRedPacket.NFTInfo[](0);
-        IRedPacket.ERC1155Info[] memory erc1155s = new IRedPacket.ERC1155Info[](
-            0
-        );
+        IPacket.NFTInfo[] memory nfts = new IPacket.NFTInfo[](0);
+        IPacket.ERC1155Info[] memory erc1155s = new IPacket.ERC1155Info[](0);
 
         // 非创建者尝试提取应该失败
         vm.startPrank(user2);
-        vm.expectRevert(IRedPacket.NotCreator.selector);
-        redPacket.withdrawAllAssets(tokens, nfts, erc1155s, address(0));
+        vm.expectRevert(IPacket.NotCreator.selector);
+        packet.withdrawAllAssets(tokens, nfts, erc1155s, address(0));
         vm.stopPrank();
     }
 
     // 测试价格触发条件
     function test_claim_with_price_trigger() public {
-        RedPacketConfig[]
-            memory configs = _createRedPacketConfigsWithPriceTrigger();
+        PacketConfig[] memory configs = _createPacketConfigsWithPriceTrigger();
         vm.startPrank(address(factory));
-        redPacket.initialize(configs, user);
+        packet.initialize(configs, user);
         vm.stopPrank();
 
         // 准备资产
         vm.startPrank(user);
-        mockToken.transfer(address(redPacket), 100 ether);
+        mockToken.transfer(address(packet), 100 ether);
         vm.stopPrank();
 
         // 设置ETH价格为2000U
@@ -367,21 +360,20 @@ contract RedPacketTest is Deploy, Test {
 
         // 领取红包
         vm.startPrank(user2);
-        bool success = redPacket.claim(0, proofs);
+        bool success = packet.claim(0, proofs);
         assertTrue(success);
         vm.stopPrank();
     }
 
     function test_claim_revert_PriceTriggerNotMet() public {
-        RedPacketConfig[]
-            memory configs = _createRedPacketConfigsWithPriceTrigger();
+        PacketConfig[] memory configs = _createPacketConfigsWithPriceTrigger();
         vm.startPrank(address(factory));
-        redPacket.initialize(configs, user);
+        packet.initialize(configs, user);
         vm.stopPrank();
 
         // 准备资产
         vm.startPrank(user);
-        mockToken.transfer(address(redPacket), 100 ether);
+        mockToken.transfer(address(packet), 100 ether);
         vm.stopPrank();
 
         // 设置ETH价格为1500U（低于触发价格）
@@ -399,25 +391,25 @@ contract RedPacketTest is Deploy, Test {
         vm.startPrank(user2);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IRedPacket.TriggerConditionNotMet.selector,
+                IPacket.TriggerConditionNotMet.selector,
                 address(priceTrigger)
             )
         );
-        redPacket.claim(0, proofs);
+        packet.claim(0, proofs);
         vm.stopPrank();
     }
 
     // 测试随机分发
     function test_claim_with_random_distribution() public {
-        RedPacketConfig[]
-            memory configs = _createRedPacketConfigsWithRandomDistribution();
+        PacketConfig[]
+            memory configs = _createPacketConfigsWithRandomDistribution();
         vm.startPrank(address(factory));
-        redPacket.initialize(configs, user);
+        packet.initialize(configs, user);
         vm.stopPrank();
 
         // 准备资产
         vm.startPrank(user);
-        mockToken.transfer(address(redPacket), 100 ether);
+        mockToken.transfer(address(packet), 100 ether);
         vm.stopPrank();
 
         // 准备访问证明
@@ -431,7 +423,7 @@ contract RedPacketTest is Deploy, Test {
             vm.deal(users[i], 1 ether);
 
             vm.startPrank(users[i]);
-            bool success = redPacket.claim(0, proofs);
+            bool success = packet.claim(0, proofs);
             assertTrue(success);
             vm.stopPrank();
         }
@@ -446,15 +438,14 @@ contract RedPacketTest is Deploy, Test {
 
     // 测试持有者访问控制
     function test_claim_with_holder_access() public {
-        RedPacketConfig[]
-            memory configs = _createRedPacketConfigsWithHolderAccess();
+        PacketConfig[] memory configs = _createPacketConfigsWithHolderAccess();
         vm.startPrank(address(factory));
-        redPacket.initialize(configs, user);
+        packet.initialize(configs, user);
         vm.stopPrank();
 
         // 准备资产
         vm.startPrank(user);
-        mockToken.transfer(address(redPacket), 100 ether);
+        mockToken.transfer(address(packet), 100 ether);
         vm.stopPrank();
 
         // 准备访问证明
@@ -463,7 +454,7 @@ contract RedPacketTest is Deploy, Test {
 
         // user2已经有代币，应该可以领取
         vm.startPrank(user2);
-        bool success = redPacket.claim(0, proofs);
+        bool success = packet.claim(0, proofs);
         assertTrue(success);
         vm.stopPrank();
 
@@ -472,25 +463,25 @@ contract RedPacketTest is Deploy, Test {
         vm.startPrank(user3);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IRedPacket.AccessDenied.selector,
+                IPacket.AccessDenied.selector,
                 address(holderAccess)
             )
         );
-        redPacket.claim(0, proofs);
+        packet.claim(0, proofs);
         vm.stopPrank();
     }
 
     // 测试抽奖访问控制
     function test_claim_with_lucky_draw_access() public {
-        RedPacketConfig[]
-            memory configs = _createRedPacketConfigsWithLuckyDrawAccess();
+        PacketConfig[]
+            memory configs = _createPacketConfigsWithLuckyDrawAccess();
         vm.startPrank(address(factory));
-        redPacket.initialize(configs, user);
+        packet.initialize(configs, user);
         vm.stopPrank();
 
         // 准备资产
         vm.startPrank(user);
-        mockToken.transfer(address(redPacket), 100 ether);
+        mockToken.transfer(address(packet), 100 ether);
         vm.stopPrank();
 
         // 准备访问证明
@@ -507,7 +498,7 @@ contract RedPacketTest is Deploy, Test {
             vm.deal(users[i], 1 ether);
             vm.startPrank(users[i]);
 
-            try redPacket.claim(0, proofs) returns (bool success) {
+            try packet.claim(0, proofs) returns (bool success) {
                 if (success) successCount++;
             } catch {}
 
@@ -518,12 +509,12 @@ contract RedPacketTest is Deploy, Test {
         assertApproxEqRel(successCount, (totalAttempts * 20) / 100, 0.3e18); // 允许30%的误差
     }
 
-    function _createRedPacketConfigs()
+    function _createPacketConfigs()
         internal
         view
-        returns (RedPacketConfig[] memory configs)
+        returns (PacketConfig[] memory configs)
     {
-        configs = new RedPacketConfig[](1);
+        configs = new PacketConfig[](1);
 
         Asset[] memory assets = new Asset[](4);
         assets[0] = Asset({
@@ -575,16 +566,16 @@ contract RedPacketTest is Deploy, Test {
             distribute: distribute
         });
 
-        configs[0] = RedPacketConfig({base: base, assets: assets});
+        configs[0] = PacketConfig({base: base, assets: assets});
     }
 
-    function _createRedPacketConfigsWithPriceTrigger()
+    function _createPacketConfigsWithPriceTrigger()
         internal
         view
-        returns (RedPacketConfig[] memory configs)
+        returns (PacketConfig[] memory configs)
     {
-        configs = new RedPacketConfig[](1);
-        configs[0] = _createRedPacketConfigs()[0];
+        configs = new PacketConfig[](1);
+        configs[0] = _createPacketConfigs()[0];
 
         // 添加价格触发条件：ETH价格 > 1800U
         TriggerConfig[] memory triggers = new TriggerConfig[](1);
@@ -596,13 +587,13 @@ contract RedPacketTest is Deploy, Test {
         configs[0].base.triggers = triggers;
     }
 
-    function _createRedPacketConfigsWithRandomDistribution()
+    function _createPacketConfigsWithRandomDistribution()
         internal
         view
-        returns (RedPacketConfig[] memory configs)
+        returns (PacketConfig[] memory configs)
     {
-        configs = new RedPacketConfig[](1);
-        configs[0] = _createRedPacketConfigs()[0];
+        configs = new PacketConfig[](1);
+        configs[0] = _createPacketConfigs()[0];
 
         // 使用随机分发
         configs[0].base.distribute = DistributeConfig({
@@ -614,13 +605,13 @@ contract RedPacketTest is Deploy, Test {
         configs[0].base.shares = 3;
     }
 
-    function _createRedPacketConfigsWithHolderAccess()
+    function _createPacketConfigsWithHolderAccess()
         internal
         view
-        returns (RedPacketConfig[] memory configs)
+        returns (PacketConfig[] memory configs)
     {
-        configs = new RedPacketConfig[](1);
-        configs[0] = _createRedPacketConfigs()[0];
+        configs = new PacketConfig[](1);
+        configs[0] = _createPacketConfigs()[0];
 
         // 使用持有者访问控制
         AccessConfig[] memory access = new AccessConfig[](1);
@@ -632,13 +623,13 @@ contract RedPacketTest is Deploy, Test {
         configs[0].base.access = access;
     }
 
-    function _createRedPacketConfigsWithLuckyDrawAccess()
+    function _createPacketConfigsWithLuckyDrawAccess()
         internal
         view
-        returns (RedPacketConfig[] memory configs)
+        returns (PacketConfig[] memory configs)
     {
-        configs = new RedPacketConfig[](1);
-        configs[0] = _createRedPacketConfigs()[0];
+        configs = new PacketConfig[](1);
+        configs[0] = _createPacketConfigs()[0];
 
         // 使用抽奖访问控制
         AccessConfig[] memory access = new AccessConfig[](1);

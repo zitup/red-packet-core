@@ -46,8 +46,8 @@ A decentralized and customizable red packet (红包) system built on blockchain 
 
 ### Core Contracts
 
-- `RedPacketFactory.sol`: Main factory for creating and managing red packets
-- `RedPacket.sol`: Implementation of red packet logic
+- `PacketFactory.sol`: Main factory for creating and managing red packets
+- `Packet.sol`: Implementation of red packet logic
 - Various validator contracts for access control and triggers
 
 ### Components

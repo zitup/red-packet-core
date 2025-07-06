@@ -4,21 +4,21 @@ pragma solidity 0.8.26;
 import {Test, Vm} from "forge-std/Test.sol";
 import {console} from "forge-std/console.sol";
 import {Deploy} from "../script/deploy.s.sol";
-import {RedPacketFactory} from "../src/RedPacketFactory.sol";
+import {PacketFactory} from "../src/PacketFactory.sol";
 import {MockERC20} from "../src/mocks/MockERC20.sol";
 import {MockERC721} from "../src/mocks/MockERC721.sol";
 import {MockERC1155} from "../src/mocks/MockERC1155.sol";
-import {IRedPacket} from "../src/interfaces/IRedPacket.sol";
-import {IRedPacketFactory} from "../src/interfaces/IRedPacketFactory.sol";
+import {IPacket} from "../src/interfaces/IPacket.sol";
+import {IPacketFactory} from "../src/interfaces/IPacketFactory.sol";
 import {ISignatureTransfer} from "@permit2/interfaces/ISignatureTransfer.sol";
-import {Asset, AssetType, BaseConfig, RedPacketConfig} from "../src/interfaces/types.sol";
+import {Asset, AssetType, BaseConfig, PacketConfig} from "../src/interfaces/types.sol";
 import {AccessConfig} from "../src/interfaces/IAccess.sol";
 import {TriggerConfig} from "../src/interfaces/ITrigger.sol";
 import {DistributeConfig} from "../src/interfaces/IDistributor.sol";
 import {IAggregatorV3} from "../src/interfaces/IAggregatorV3.sol";
 import {Ownable} from "@oz/contracts/access/Ownable.sol";
 
-contract RedPacketFactoryTest is Deploy, Test {
+contract PacketFactoryTest is Deploy, Test {
     address user;
     address user2;
     MockERC20 mockToken;
@@ -61,11 +61,11 @@ contract RedPacketFactoryTest is Deploy, Test {
 
         // invariant test
         bytes4[] memory selectors = new bytes4[](5);
-        selectors[0] = RedPacketFactory.setFeeReceiver.selector;
-        selectors[1] = RedPacketFactory.setFeeShareDenominator.selector;
-        selectors[2] = RedPacketFactory.registerComponents.selector;
-        selectors[3] = RedPacketFactory.unregisterComponents.selector;
-        selectors[4] = RedPacketFactory.createRedPacket.selector;
+        selectors[0] = PacketFactory.setFeeReceiver.selector;
+        selectors[1] = PacketFactory.setFeeShareDenominator.selector;
+        selectors[2] = PacketFactory.registerComponents.selector;
+        selectors[3] = PacketFactory.unregisterComponents.selector;
+        selectors[4] = PacketFactory.createPacket.selector;
         targetSelector(
             FuzzSelector({addr: address(factory), selectors: selectors})
         );
@@ -103,12 +103,12 @@ contract RedPacketFactoryTest is Deploy, Test {
 
         // 不能设置零地址
         vm.prank(factory.owner());
-        vm.expectRevert(IRedPacketFactory.InvalidFeeReceiver.selector);
+        vm.expectRevert(IPacketFactory.InvalidFeeReceiver.selector);
         factory.setFeeReceiver(address(0));
 
         // 不能设置零分母
         vm.prank(factory.owner());
-        vm.expectRevert(IRedPacketFactory.InvalidFeeConfig.selector);
+        vm.expectRevert(IPacketFactory.InvalidFeeConfig.selector);
         factory.setFeeShareDenominator(0);
     }
 
@@ -119,7 +119,7 @@ contract RedPacketFactoryTest is Deploy, Test {
             abi.encodeWithSelector(IAggregatorV3.latestRoundData.selector),
             abi.encode(0, -1, 0, 0, 0)
         );
-        vm.expectRevert(IRedPacketFactory.InvalidPrice.selector);
+        vm.expectRevert(IPacketFactory.InvalidPrice.selector);
         factory.calculateFee(100);
     }
 
@@ -146,10 +146,10 @@ contract RedPacketFactoryTest is Deploy, Test {
             });
     }
 
-    function test_createRedPacket_errors() public {
+    function test_createPacket_errors() public {
         vm.startPrank(user);
 
-        RedPacketConfig[] memory configs = new RedPacketConfig[](1);
+        PacketConfig[] memory configs = new PacketConfig[](1);
         BaseConfig memory baseConfig = _createBaseConfig();
         Asset[] memory assets = new Asset[](1);
         assets[0] = Asset({
@@ -158,7 +158,7 @@ contract RedPacketFactoryTest is Deploy, Test {
             amount: 1 ether,
             tokenId: 0
         });
-        configs[0] = RedPacketConfig({base: baseConfig, assets: assets});
+        configs[0] = PacketConfig({base: baseConfig, assets: assets});
 
         // 设置ETH价格
         vm.mockCall(
@@ -170,66 +170,60 @@ contract RedPacketFactoryTest is Deploy, Test {
         // 测试ETH金额不足
         vm.expectRevert(
             abi.encodeWithSelector(
-                IRedPacketFactory.InvalidEthAmount.selector,
+                IPacketFactory.InvalidEthAmount.selector,
                 1.005 ether
             )
         );
-        factory.createRedPacket{value: 1 ether}(configs, "");
+        factory.createPacket{value: 1 ether}(configs, "");
 
         // 测试空配置数组
-        vm.expectRevert(IRedPacketFactory.EmptyConfigs.selector);
-        factory.createRedPacket{value: 1 ether}(new RedPacketConfig[](0), "");
+        vm.expectRevert(IPacketFactory.EmptyConfigs.selector);
+        factory.createPacket{value: 1 ether}(new PacketConfig[](0), "");
 
         // 测试无效的组件配置
-        RedPacketConfig[] memory invalidConfigs = new RedPacketConfig[](1);
+        PacketConfig[] memory invalidConfigs = new PacketConfig[](1);
         BaseConfig memory invalidBase = _createBaseConfig();
         invalidBase.distribute.distributor = address(0x1234); // 使用未注册的分发器
-        invalidConfigs[0] = RedPacketConfig({
-            base: invalidBase,
-            assets: assets
-        });
+        invalidConfigs[0] = PacketConfig({base: invalidBase, assets: assets});
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                IRedPacketFactory.InvalidComponent.selector,
-                IRedPacketFactory.ComponentType.Distributor,
+                IPacketFactory.InvalidComponent.selector,
+                IPacketFactory.ComponentType.Distributor,
                 address(0x1234)
             )
         );
-        factory.createRedPacket{value: 1.005 ether}(invalidConfigs, "");
+        factory.createPacket{value: 1.005 ether}(invalidConfigs, "");
 
         // 测试无资产配置
         Asset[] memory emptyAssets = new Asset[](0);
-        RedPacketConfig[] memory noAssetConfigs = new RedPacketConfig[](1);
-        noAssetConfigs[0] = RedPacketConfig({
+        PacketConfig[] memory noAssetConfigs = new PacketConfig[](1);
+        noAssetConfigs[0] = PacketConfig({
             base: _createBaseConfig(),
             assets: emptyAssets
         });
-        vm.expectRevert(IRedPacketFactory.NoAssets.selector);
-        factory.createRedPacket{value: 0}(noAssetConfigs, "");
+        vm.expectRevert(IPacketFactory.NoAssets.selector);
+        factory.createPacket{value: 0}(noAssetConfigs, "");
 
         // 测试无份数
         BaseConfig memory zeroSharesBase = _createBaseConfig();
         zeroSharesBase.shares = 0;
-        RedPacketConfig[] memory zeroSharesConfigs = new RedPacketConfig[](1);
-        zeroSharesConfigs[0] = RedPacketConfig({
+        PacketConfig[] memory zeroSharesConfigs = new PacketConfig[](1);
+        zeroSharesConfigs[0] = PacketConfig({
             base: zeroSharesBase,
             assets: assets
         });
-        vm.expectRevert(IRedPacketFactory.InvalidShares.selector);
-        factory.createRedPacket{value: 1.005 ether}(zeroSharesConfigs, "");
+        vm.expectRevert(IPacketFactory.InvalidShares.selector);
+        factory.createPacket{value: 1.005 ether}(zeroSharesConfigs, "");
 
         // 测试无访问控制
         BaseConfig memory noAccessBase = _createBaseConfig();
         noAccessBase.access = new AccessConfig[](0);
         noAccessBase.shares = 100;
-        RedPacketConfig[] memory noAccessConfigs = new RedPacketConfig[](1);
-        noAccessConfigs[0] = RedPacketConfig({
-            base: noAccessBase,
-            assets: assets
-        });
-        vm.expectRevert(IRedPacketFactory.NoAccessControl.selector);
-        factory.createRedPacket{value: 1.005 ether}(noAccessConfigs, "");
+        PacketConfig[] memory noAccessConfigs = new PacketConfig[](1);
+        noAccessConfigs[0] = PacketConfig({base: noAccessBase, assets: assets});
+        vm.expectRevert(IPacketFactory.NoAccessControl.selector);
+        factory.createPacket{value: 1.005 ether}(noAccessConfigs, "");
 
         // 测试InvalidTokenAmount
         Asset[] memory invalidTokenAmountAssets = new Asset[](1);
@@ -239,22 +233,18 @@ contract RedPacketFactoryTest is Deploy, Test {
             amount: 0,
             tokenId: 0
         });
-        RedPacketConfig[]
-            memory invalidTokenAmountConfigs = new RedPacketConfig[](1);
-        invalidTokenAmountConfigs[0] = RedPacketConfig({
+        PacketConfig[] memory invalidTokenAmountConfigs = new PacketConfig[](1);
+        invalidTokenAmountConfigs[0] = PacketConfig({
             base: _createBaseConfig(),
             assets: invalidTokenAmountAssets
         });
         vm.expectRevert(
             abi.encodeWithSelector(
-                IRedPacketFactory.InvalidTokenAmount.selector,
+                IPacketFactory.InvalidTokenAmount.selector,
                 address(0)
             )
         );
-        factory.createRedPacket{value: 1.005 ether}(
-            invalidTokenAmountConfigs,
-            ""
-        );
+        factory.createPacket{value: 1.005 ether}(invalidTokenAmountConfigs, "");
 
         vm.stopPrank();
     }
@@ -273,7 +263,7 @@ contract RedPacketFactoryTest is Deploy, Test {
             )
         );
         factory.registerComponents(
-            IRedPacketFactory.ComponentType.Access,
+            IPacketFactory.ComponentType.Access,
             components
         );
 
@@ -281,21 +271,21 @@ contract RedPacketFactoryTest is Deploy, Test {
         vm.startPrank(factory.owner());
 
         // 不能注册零地址
-        vm.expectRevert(IRedPacketFactory.ZeroAddress.selector);
+        vm.expectRevert(IPacketFactory.ZeroAddress.selector);
         address[] memory invalidComponents = new address[](1);
         invalidComponents[0] = address(0);
         factory.registerComponents(
-            IRedPacketFactory.ComponentType.Access,
+            IPacketFactory.ComponentType.Access,
             invalidComponents
         );
 
         // 正常注册
         factory.registerComponents(
-            IRedPacketFactory.ComponentType.Access,
+            IPacketFactory.ComponentType.Access,
             components
         );
         bool[] memory results = factory.getRegisteredComponents(
-            IRedPacketFactory.ComponentType.Access,
+            IPacketFactory.ComponentType.Access,
             components
         );
         assertTrue(results[0]);
@@ -312,7 +302,7 @@ contract RedPacketFactoryTest is Deploy, Test {
         // 先注册组件
         vm.startPrank(factory.owner());
         factory.registerComponents(
-            IRedPacketFactory.ComponentType.Access,
+            IPacketFactory.ComponentType.Access,
             components
         );
 
@@ -326,26 +316,26 @@ contract RedPacketFactoryTest is Deploy, Test {
             )
         );
         factory.unregisterComponents(
-            IRedPacketFactory.ComponentType.Access,
+            IPacketFactory.ComponentType.Access,
             components
         );
 
         // owner 可以注销
         vm.prank(factory.owner());
         factory.unregisterComponents(
-            IRedPacketFactory.ComponentType.Access,
+            IPacketFactory.ComponentType.Access,
             components
         );
 
         bool[] memory results = factory.getRegisteredComponents(
-            IRedPacketFactory.ComponentType.Access,
+            IPacketFactory.ComponentType.Access,
             components
         );
         assertFalse(results[0]);
         assertFalse(results[1]);
     }
 
-    function test_createRedPacket_Native() public {
+    function test_createPacket_Native() public {
         vm.startPrank(user);
 
         // 准备配置数据
@@ -380,8 +370,8 @@ contract RedPacketFactoryTest is Deploy, Test {
             })
         });
 
-        RedPacketConfig[] memory configs = new RedPacketConfig[](1);
-        configs[0] = RedPacketConfig({base: baseConfig, assets: assets});
+        PacketConfig[] memory configs = new PacketConfig[](1);
+        configs[0] = PacketConfig({base: baseConfig, assets: assets});
 
         // 设置ETH价格为2000U
         int256 ethPrice = 2000e8; // 8位小数
@@ -396,25 +386,22 @@ contract RedPacketFactoryTest is Deploy, Test {
         assertEq(feeInETH, 0.005 ether);
 
         // 创建红包
-        address redPacket = factory.createRedPacket{value: 1.005 ether}(
-            configs,
-            ""
-        );
+        address packet = factory.createPacket{value: 1.005 ether}(configs, "");
 
         // 验证红包创建
-        assertTrue(redPacket != address(0), "Red packet not created");
-        assertEq(IRedPacket(redPacket).creator(), user, "Wrong creator");
+        assertTrue(packet != address(0), "Red packet not created");
+        assertEq(IPacket(packet).creator(), user, "Wrong creator");
         assertEq(factory.creatorsCount(), 1, "Creator count not incremented");
         assertEq(
-            factory.getRedPackets(user)[0],
-            redPacket,
+            factory.getPackets(user)[0],
+            packet,
             "Red packet not recorded"
         );
 
         vm.stopPrank();
     }
 
-    function test_createRedPacket_ERC20() public {
+    function test_createPacket_ERC20() public {
         vm.startPrank(user);
 
         // 准备 ERC20 资产
@@ -524,8 +511,8 @@ contract RedPacketFactoryTest is Deploy, Test {
             })
         });
 
-        RedPacketConfig[] memory configs = new RedPacketConfig[](1);
-        configs[0] = RedPacketConfig({base: baseConfig, assets: assets});
+        PacketConfig[] memory configs = new PacketConfig[](1);
+        configs[0] = PacketConfig({base: baseConfig, assets: assets});
 
         // 计算费用：100份 * 0.1U = 10U，10U / 2000U/ETH = 0.005 ETH
         (uint256 feeInETH, , ) = factory.calculateFee(100);
@@ -535,18 +522,18 @@ contract RedPacketFactoryTest is Deploy, Test {
         bytes memory permitData = abi.encode(permitBatch, signature);
 
         // 创建红包
-        address redPacket = factory.createRedPacket{value: feeInETH}(
+        address packet = factory.createPacket{value: feeInETH}(
             configs,
             permitData
         );
 
         // 验证红包创建
-        assertTrue(redPacket != address(0), "Red packet not created");
-        assertEq(IRedPacket(redPacket).creator(), user, "Wrong creator");
+        assertTrue(packet != address(0), "Red packet not created");
+        assertEq(IPacket(packet).creator(), user, "Wrong creator");
         assertEq(factory.creatorsCount(), 1, "Creator count not incremented");
         assertEq(
-            factory.getRedPackets(user)[0],
-            redPacket,
+            factory.getPackets(user)[0],
+            packet,
             "Red packet not recorded"
         );
 
@@ -592,18 +579,18 @@ contract RedPacketFactoryTest is Deploy, Test {
             })
         });
 
-        RedPacketConfig[] memory configs = new RedPacketConfig[](1);
-        configs[0] = RedPacketConfig({base: baseConfig, assets: assets});
+        PacketConfig[] memory configs = new PacketConfig[](1);
+        configs[0] = PacketConfig({base: baseConfig, assets: assets});
 
         // 计算费用：100份 * 0.1U = 10U，10U / 2000U/ETH = 0.005 ETH
         (uint256 feeInETH, , ) = factory.calculateFee(100);
 
         // 创建两个红包
-        address redPacket1 = factory.createRedPacket{value: 1 ether + feeInETH}(
+        address packet1 = factory.createPacket{value: 1 ether + feeInETH}(
             configs,
             ""
         );
-        address redPacket2 = factory.createRedPacket{value: 1 ether + feeInETH}(
+        address packet2 = factory.createPacket{value: 1 ether + feeInETH}(
             configs,
             ""
         );
@@ -612,25 +599,25 @@ contract RedPacketFactoryTest is Deploy, Test {
         // 测试 getCreatorsCount
         assertEq(factory.creatorsCount(), 1);
 
-        // 测试 getRedPackets
-        address[] memory userRedPackets = factory.getRedPackets(user);
-        assertEq(userRedPackets.length, 2);
-        assertEq(userRedPackets[0], redPacket1);
-        assertEq(userRedPackets[1], redPacket2);
+        // 测试 getPackets
+        address[] memory userPackets = factory.getPackets(user);
+        assertEq(userPackets.length, 2);
+        assertEq(userPackets[0], packet1);
+        assertEq(userPackets[1], packet2);
 
         // 测试 getRegisteredComponents
         address[] memory componentsToCheck = new address[](2);
         componentsToCheck[0] = address(codeAccess);
         componentsToCheck[1] = makeAddr("nonRegisteredComponent");
         bool[] memory results = factory.getRegisteredComponents(
-            IRedPacketFactory.ComponentType.Access,
+            IPacketFactory.ComponentType.Access,
             componentsToCheck
         );
         assertTrue(results[0]);
         assertFalse(results[1]);
     }
 
-    function test_RedPacketCreatedEvent() public {
+    function test_PacketCreatedEvent() public {
         vm.startPrank(user);
 
         // 设置ETH价格为2000U
@@ -669,8 +656,8 @@ contract RedPacketFactoryTest is Deploy, Test {
             })
         });
 
-        RedPacketConfig[] memory configs = new RedPacketConfig[](1);
-        configs[0] = RedPacketConfig({base: baseConfig, assets: assets});
+        PacketConfig[] memory configs = new PacketConfig[](1);
+        configs[0] = PacketConfig({base: baseConfig, assets: assets});
 
         // 计算费用
         (uint256 feeInETH, , ) = factory.calculateFee(100);
@@ -678,11 +665,11 @@ contract RedPacketFactoryTest is Deploy, Test {
         // 期望事件被发出
         vm.expectEmit(false, true, false, false);
         // 我们不知道确切的红包地址，但我们知道创建者是user
-        emit IRedPacketFactory.RedPacketCreated(address(0), user);
+        emit IPacketFactory.PacketCreated(address(0), user);
 
         vm.recordLogs();
         // 创建红包
-        address redPacket = factory.createRedPacket{value: 1 ether + feeInETH}(
+        address packet = factory.createPacket{value: 1 ether + feeInETH}(
             configs,
             ""
         );
@@ -690,19 +677,19 @@ contract RedPacketFactoryTest is Deploy, Test {
         // 验证事件日志
         Vm.Log[] memory entries = vm.getRecordedLogs();
 
-        // 找到RedPacketCreated事件
+        // 找到PacketCreated事件
         bool found = false;
         for (uint i = 0; i < entries.length; i++) {
-            // RedPacketCreated事件的topic[0]是事件签名
+            // PacketCreated事件的topic[0]是事件签名
             if (
                 entries[i].topics[0] ==
-                keccak256("RedPacketCreated(address,address)")
+                keccak256("PacketCreated(address,address)")
             ) {
-                // topic[1]是indexed redPacket地址
+                // topic[1]是indexed packet地址
                 // topic[2]是indexed creator地址
                 assertEq(
                     address(uint160(uint256(entries[i].topics[1]))),
-                    redPacket,
+                    packet,
                     "Wrong red packet address in event"
                 );
                 assertEq(
@@ -714,12 +701,12 @@ contract RedPacketFactoryTest is Deploy, Test {
                 break;
             }
         }
-        assertTrue(found, "RedPacketCreated event not found");
+        assertTrue(found, "PacketCreated event not found");
 
         vm.stopPrank();
     }
 
-    function test_createRedPacket_with_calldata() public {
+    function test_createPacket_with_calldata() public {
         vm.startPrank(user);
 
         bytes memory data = hex"";
@@ -733,7 +720,7 @@ contract RedPacketFactoryTest is Deploy, Test {
     }
 
     // 测试创建多个红包
-    function test_createMultipleRedPackets() public {
+    function test_createMultiplePackets() public {
         vm.startPrank(user);
 
         // 设置ETH价格为2000U
@@ -754,9 +741,9 @@ contract RedPacketFactoryTest is Deploy, Test {
         });
 
         // 创建多个红包配置
-        RedPacketConfig[] memory configs = new RedPacketConfig[](3);
+        PacketConfig[] memory configs = new PacketConfig[](3);
         for (uint i = 0; i < 3; i++) {
-            configs[i] = RedPacketConfig({base: baseConfig, assets: assets});
+            configs[i] = PacketConfig({base: baseConfig, assets: assets});
         }
 
         // 计算总费用：300份 * 0.1U = 30U，30U / 2000U/ETH = 0.015 ETH
@@ -764,21 +751,21 @@ contract RedPacketFactoryTest is Deploy, Test {
         assertEq(feeInETH, 0.015 ether);
 
         // 创建红包
-        address redPacket = factory.createRedPacket{value: 3 ether + feeInETH}(
+        address packet = factory.createPacket{value: 3 ether + feeInETH}(
             configs,
             ""
         );
 
         // 验证红包创建
-        assertTrue(redPacket != address(0), "Red packet not created");
-        assertEq(IRedPacket(redPacket).creator(), user, "Wrong creator");
+        assertTrue(packet != address(0), "Red packet not created");
+        assertEq(IPacket(packet).creator(), user, "Wrong creator");
         assertEq(factory.creatorsCount(), 1, "Creator count not incremented");
 
         vm.stopPrank();
     }
 
     // 测试创建包含多种资产的红包
-    function test_createRedPacket_MultiAssets() public {
+    function test_createPacket_MultiAssets() public {
         vm.startPrank(user);
 
         // 设置ETH价格
@@ -816,11 +803,8 @@ contract RedPacketFactoryTest is Deploy, Test {
         });
 
         // 准备红包配置
-        RedPacketConfig[] memory configs = new RedPacketConfig[](1);
-        configs[0] = RedPacketConfig({
-            base: _createBaseConfig(),
-            assets: assets
-        });
+        PacketConfig[] memory configs = new PacketConfig[](1);
+        configs[0] = PacketConfig({base: _createBaseConfig(), assets: assets});
 
         // 准备 permit2 数据
         ISignatureTransfer.TokenPermissions[]
@@ -896,28 +880,28 @@ contract RedPacketFactoryTest is Deploy, Test {
         mockERC1155.setApprovalForAll(address(factory), true);
 
         // 创建红包
-        address redPacket = factory.createRedPacket{value: 1 ether + feeInETH}(
+        address packet = factory.createPacket{value: 1 ether + feeInETH}(
             configs,
             permitData
         );
 
         // 验证红包创建
-        assertTrue(redPacket != address(0), "Red packet not created");
-        assertEq(IRedPacket(redPacket).creator(), user, "Wrong creator");
+        assertTrue(packet != address(0), "Red packet not created");
+        assertEq(IPacket(packet).creator(), user, "Wrong creator");
 
         // 验证资产转移
-        assertEq(mockNFT.ownerOf(1), redPacket, "NFT not transferred");
+        assertEq(mockNFT.ownerOf(1), packet, "NFT not transferred");
         assertEq(
-            mockERC1155.balanceOf(redPacket, 1),
+            mockERC1155.balanceOf(packet, 1),
             50,
             "ERC1155 not transferred"
         );
         assertEq(
-            mockToken.balanceOf(redPacket),
+            mockToken.balanceOf(packet),
             100 ether,
             "ERC20 not transferred"
         );
-        assertEq(redPacket.balance, 1 ether, "ETH not transferred");
+        assertEq(packet.balance, 1 ether, "ETH not transferred");
 
         vm.stopPrank();
     }

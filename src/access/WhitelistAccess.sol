@@ -7,7 +7,7 @@ import {MerkleProof} from "@oz/contracts/utils/cryptography/MerkleProof.sol";
 /// @notice A validator for whitelist-based access control using Merkle tree
 contract WhitelistAccess is IAccess {
     /// @notice Validates if the user is in the whitelist using Merkle proof
-    /// @param user The user trying to claim the red packet
+    /// @param user The user trying to claim the packet
     /// @param proof The Merkle proof
     /// @param configData The Merkle root
     /// @return valid True if the user is in the whitelist
