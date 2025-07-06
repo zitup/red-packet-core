@@ -2,8 +2,6 @@
 pragma solidity 0.8.26;
 
 import {IERC20} from "@oz/contracts/token/ERC20/IERC20.sol";
-import {IERC721} from "@oz/contracts/interfaces/IERC721.sol";
-import {IERC1155} from "@oz/contracts/interfaces/IERC1155.sol";
 import {SafeERC20} from "@oz/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Initializable} from "@oz/contracts/proxy/utils/Initializable.sol";
 import {ReentrancyGuard} from "@solmate/utils/ReentrancyGuard.sol";
@@ -87,13 +85,9 @@ contract Packet is IPacket, Initializable, ReentrancyGuard {
     /// @notice 创建者一次性提取所有资产
     /// @dev 只有在所有红包过期后才能调用
     /// @param tokens 要提取的ERC20代币地址列表
-    /// @param nfts NFT代币提取配置，包含合约地址和tokenId
-    /// @param erc1155s ERC1155代币提取配置，包含合约地址和tokenId
     /// @param recipient 接受者地址
     function withdrawAllAssets(
         address[] calldata tokens,
-        NFTInfo[] calldata nfts,
-        ERC1155Info[] calldata erc1155s,
         address recipient
     ) external onlyCreator nonReentrant {
         if (recipient == address(0)) {
@@ -117,34 +111,6 @@ contract Packet is IPacket, Initializable, ReentrancyGuard {
             uint256 tokenBalance = IERC20(tokens[i]).balanceOf(packet);
             if (tokenBalance > 0) {
                 IERC20(tokens[i]).safeTransfer(recipient, tokenBalance);
-            }
-        }
-
-        // 提取NFT
-        for (uint256 i = 0; i < nfts.length; i++) {
-            if (IERC721(nfts[i].token).ownerOf(nfts[i].tokenId) == packet) {
-                IERC721(nfts[i].token).safeTransferFrom(
-                    packet,
-                    recipient,
-                    nfts[i].tokenId
-                );
-            }
-        }
-
-        // 提取ERC1155
-        for (uint256 i = 0; i < erc1155s.length; i++) {
-            uint256 tokenBalance = IERC1155(erc1155s[i].token).balanceOf(
-                packet,
-                erc1155s[i].tokenId
-            );
-            if (tokenBalance > 0) {
-                IERC1155(erc1155s[i].token).safeTransferFrom(
-                    packet,
-                    recipient,
-                    erc1155s[i].tokenId,
-                    tokenBalance,
-                    ""
-                );
             }
         }
     }
@@ -290,41 +256,8 @@ contract Packet is IPacket, Initializable, ReentrancyGuard {
                 if (!success) revert EthTransferFailed();
             } else if (result.assetType == AssetType.ERC20) {
                 IERC20(result.token).safeTransfer(to, result.amount);
-            } else if (result.assetType == AssetType.ERC721) {
-                IERC721(result.token).safeTransferFrom(
-                    address(this),
-                    to,
-                    result.tokenId
-                );
-            } else if (result.assetType == AssetType.ERC1155) {
-                IERC1155(result.token).safeTransferFrom(
-                    address(this),
-                    to,
-                    result.tokenId,
-                    result.amount,
-                    ""
-                );
             }
         }
-    }
-
-    function onERC721Received(
-        address,
-        address,
-        uint256,
-        bytes calldata
-    ) external pure returns (bytes4) {
-        return this.onERC721Received.selector;
-    }
-
-    function onERC1155Received(
-        address,
-        address,
-        uint256,
-        uint256,
-        bytes calldata
-    ) external pure returns (bytes4) {
-        return this.onERC1155Received.selector;
     }
 
     receive() external payable {}

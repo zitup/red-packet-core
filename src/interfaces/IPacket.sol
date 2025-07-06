@@ -6,16 +6,6 @@ import "./IDistributor.sol";
 import "./types.sol";
 
 interface IPacket {
-    struct NFTInfo {
-        address token;
-        uint256 tokenId;
-    }
-
-    struct ERC1155Info {
-        address token;
-        uint256 tokenId;
-    }
-
     /// errors
     error NotFactory();
     error NotCreator();
@@ -56,4 +46,9 @@ interface IPacket {
     function claimAll(bytes[][] calldata accessProofs) external;
 
     function isExpired() external view returns (bool);
+
+    function withdrawAllAssets(
+        address[] calldata tokens,
+        address recipient
+    ) external;
 }

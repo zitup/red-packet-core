@@ -7,17 +7,14 @@ import "./IDistributor.sol";
 enum AssetType {
     None,
     Native,
-    ERC20,
-    ERC721,
-    ERC1155
+    ERC20
 }
 
 // 原子资产
 struct Asset {
-    AssetType assetType; // ERC20/721/1155
+    AssetType assetType; // ERC20
     address token;
-    uint256 tokenId; // for NFT
-    uint256 amount; // for ERC20/1155
+    uint256 amount; // for ERC20
 }
 
 // 通用基础参数
@@ -53,43 +50,6 @@ struct PacketConfig {
     BaseConfig base;
     Asset[] assets; // 单个资产时长度为1，长度大于1时为同系列资产，比如USDT/USDC或一个NFT系列，属于同一个池子
 }
-
-// // 基础红包
-// // ERC20 红包
-// struct ERC20PacketConfig {
-//     BaseConfig base;
-//     Asset asset; // token资产信息
-//     uint256 shares; // 红包份数
-//     DistributeConfig distribute; // 分配配置
-// }
-
-// // ERC721 红包
-// struct ERC721PacketConfig {
-//     BaseConfig base;
-//     Asset asset; // NFT资产信息
-//     // NFT红包只支持一对一赠送，无需额外参数
-// }
-
-// // ERC1155
-// struct ERC1155PacketConfig {
-//     BaseConfig base;
-//     Asset asset; // token资产信息
-//     uint256 shares; // 红包份数
-//     DistributeConfig distribute; // 分配配置
-// }
-
-// // 系列红包
-// struct SeriesPacketConfig {
-//     BaseConfig base;
-//     Asset[] assets; // 同系列资产列表
-//     uint256 shares; // 红包份数
-//     DistributeConfig distribute; // 分配配置
-// }
-
-// // 定制红包
-// struct CustomPacketConfig {
-//     PacketConfig[] subPackets; // 子红包列表
-// }
 
 struct PacketInfo {
     address creator;

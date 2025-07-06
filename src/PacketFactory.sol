@@ -3,8 +3,6 @@ pragma solidity 0.8.26;
 
 import {Ownable} from "@oz/contracts/access/Ownable.sol";
 import {BeaconProxy} from "@oz/contracts/proxy/beacon/BeaconProxy.sol";
-import {IERC721} from "@oz/contracts/interfaces/IERC721.sol";
-import {IERC1155} from "@oz/contracts/interfaces/IERC1155.sol";
 import {ISignatureTransfer as IPermit2} from "@permit2/interfaces/ISignatureTransfer.sol";
 import {IPacketFactory} from "./interfaces/IPacketFactory.sol";
 import {IAggregatorV3} from "./interfaces/IAggregatorV3.sol";
@@ -236,8 +234,6 @@ contract PacketFactory is IPacketFactory, Ownable {
         uint256 expectedEthValue;
         (expectedEthValue) = _handleERC20Transfers(packet, configs, permit);
 
-        _handleNFTTransfers(packet, configs);
-
         // 计算基于份数的手续费
         (uint256 totalFee, , ) = _calculateFee(totalShares);
 
@@ -304,33 +300,6 @@ contract PacketFactory is IPacketFactory, Ownable {
                 msg.sender,
                 signature
             );
-        }
-    }
-
-    function _handleNFTTransfers(
-        address packet,
-        PacketConfig[] calldata configs
-    ) internal {
-        for (uint256 i = 0; i < configs.length; i++) {
-            for (uint256 j = 0; j < configs[i].assets.length; j++) {
-                Asset calldata asset = configs[i].assets[j];
-
-                if (asset.assetType == AssetType.ERC721) {
-                    IERC721(asset.token).safeTransferFrom(
-                        msg.sender,
-                        packet,
-                        asset.tokenId
-                    );
-                } else if (asset.assetType == AssetType.ERC1155) {
-                    IERC1155(asset.token).safeTransferFrom(
-                        msg.sender,
-                        packet,
-                        asset.tokenId,
-                        asset.amount,
-                        ""
-                    );
-                }
-            }
         }
     }
 
