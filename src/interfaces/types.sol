@@ -1,13 +1,20 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.26;
-import "./ITrigger.sol";
-import "./IAccess.sol";
-import "./IDistributor.sol";
 
 enum AssetType {
     None,
     Native,
     ERC20
+}
+
+enum DistributeType {
+    Average,
+    Lucky
+}
+
+enum AccessType {
+    Public,
+    Whitelist
 }
 
 // 原子资产
@@ -24,9 +31,9 @@ struct BaseConfig {
     uint256 startTime;
     uint256 durationTime;
     uint256 shares; // 红包份数
-    AccessConfig[] access; // 支持多个访问控制
-    TriggerConfig[] triggers; // 支持多个触发条件
-    DistributeConfig distribute; // 分配配置
+    AccessType accessType;
+    bytes32 merkleRoot; // for whitelist
+    DistributeType distributeType;
 }
 
 // 一个 PacketConfig 表示一个红包，可以看作一个池子，池子中的资产使用相同的份额和控制规则（access/trigger/distribute）
@@ -57,4 +64,10 @@ struct PacketInfo {
     uint256 createTime;
     uint256[] claimedShares;
     bool isExpired;
+}
+
+struct DistributeResult {
+    AssetType assetType;
+    address token;
+    uint256 amount;
 }

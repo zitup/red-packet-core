@@ -5,6 +5,7 @@ import {IERC20} from "@oz/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@oz/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Initializable} from "@oz/contracts/proxy/utils/Initializable.sol";
 import {ReentrancyGuard} from "@solmate/utils/ReentrancyGuard.sol";
+import {MerkleProof} from "@oz/contracts/utils/cryptography/MerkleProof.sol";
 import "./interfaces/IPacket.sol";
 
 /**
@@ -26,9 +27,6 @@ contract Packet is IPacket, Initializable, ReentrancyGuard {
     mapping(uint256 => uint256) public claimedShares; // packetIndex => claimed shares
     mapping(uint256 => uint256) public claimedAmounts; // packetIndex => claimed shares
     mapping(uint256 => mapping(address => bool)) public claimed; // packetIndex => user => claimed
-
-    // trigger验证状态
-    mapping(uint256 => bool) public triggerValidated; // packetIndex => isValidated
 
     modifier onlyFactory() {
         if (msg.sender != factory) revert NotFactory();
@@ -132,10 +130,10 @@ contract Packet is IPacket, Initializable, ReentrancyGuard {
 
     /// @notice 领取红包
     /// @param packetIndex 红包索引
-    /// @param accessProofs 访问控制证明
+    /// @param merkleProof 访问控制证明 (for whitelist)
     function claim(
         uint256 packetIndex,
-        bytes[] calldata accessProofs
+        bytes32[] calldata merkleProof
     ) public whenActive(packetIndex) nonReentrant returns (bool) {
         PacketConfig storage config = configs[packetIndex];
 
@@ -147,24 +145,19 @@ contract Packet is IPacket, Initializable, ReentrancyGuard {
             claimedShares[packetIndex];
         if (remainingShares == 0) revert NoRemainingShares();
 
-        // 验证触发条件
-        if (!triggerValidated[packetIndex]) {
-            _validateTriggers(config.base.triggers);
-            // 标记为已触发
-            triggerValidated[packetIndex] = true;
-        }
-
         // 验证访问控制
-        _validateAccess(config.base.access, msg.sender, accessProofs);
+        _validateAccess(
+            config.base.accessType,
+            config.base.merkleRoot,
+            merkleProof
+        );
 
         // 计算分配结果
         DistributeResult[] memory results;
         uint256 distributedAmounts;
         (results, distributedAmounts) = _calculateDistribution(
             packetIndex,
-            config.base.distribute,
-            config.assets,
-            config.base.shares
+            config
         );
 
         // 更新状态
@@ -180,7 +173,7 @@ contract Packet is IPacket, Initializable, ReentrancyGuard {
     }
 
     /// @notice 一次性领取所有红包
-    function claimAll(bytes[][] calldata accessProofs) external nonReentrant {
+    function claimAll(bytes32[][] calldata accessProofs) external nonReentrant {
         uint256 totalPackets = configs.length;
 
         for (uint256 i = 0; i < totalPackets; i++) {
@@ -194,53 +187,72 @@ contract Packet is IPacket, Initializable, ReentrancyGuard {
         emit ClaimAll(msg.sender, totalPackets);
     }
 
-    // TODO: 这里有一个测试用例，校验三个控制的view修饰符是否起作用，通过调用一个外部控制合约，改变合约状态验证
     // 验证访问控制
     function _validateAccess(
-        AccessConfig[] memory accessConfigs,
-        address user,
-        bytes[] calldata proofs
+        AccessType accessType,
+        bytes32 merkleRoot,
+        bytes32[] calldata proof
     ) internal view {
-        for (uint256 i = 0; i < accessConfigs.length; i++) {
-            bool valid = IAccess(accessConfigs[i].validator).validate(
-                user,
-                proofs[i],
-                accessConfigs[i].data
-            );
-            if (!valid) revert AccessDenied(accessConfigs[i].validator);
-        }
-    }
-
-    // 验证触发条件
-    function _validateTriggers(TriggerConfig[] memory triggers) internal view {
-        for (uint256 i = 0; i < triggers.length; i++) {
-            bool valid = ITrigger(triggers[i].validator).validate(
-                triggers[i].data
-            );
-            if (!valid) revert TriggerConditionNotMet(triggers[i].validator);
+        if (accessType == AccessType.Whitelist) {
+            bytes32 leaf = keccak256(abi.encodePacked(msg.sender));
+            if (!MerkleProof.verify(proof, merkleRoot, leaf)) {
+                revert AccessDenied();
+            }
         }
     }
 
     // 计算分配结果
     function _calculateDistribution(
         uint256 packetIndex,
-        DistributeConfig storage distribute,
-        Asset[] storage assets,
-        uint256 totalShares
+        PacketConfig storage config
     )
         internal
         view
         returns (DistributeResult[] memory results, uint256 distributedAmounts)
     {
-        (results, distributedAmounts) = IDistributor(distribute.distributor)
-            .distribute(
-                msg.sender,
-                assets,
-                totalShares,
-                claimedShares[packetIndex],
-                claimedAmounts[packetIndex],
-                distribute.data
+        uint remainingShares = config.base.shares - claimedShares[packetIndex];
+        results = new DistributeResult[](config.assets.length);
+
+        for (uint i = 0; i < config.assets.length; i++) {
+            Asset storage asset = config.assets[i];
+            uint256 amountToDistribute;
+
+            if (config.base.distributeType == DistributeType.Average) {
+                amountToDistribute = asset.amount / config.base.shares;
+            } else if (config.base.distributeType == DistributeType.Lucky) {
+                uint256 remainingAmount = asset.amount -
+                    claimedAmounts[packetIndex];
+                if (remainingShares == 1) {
+                    amountToDistribute = remainingAmount;
+                } else {
+                    // Simple pseudo-randomness
+                    uint256 random = uint(
+                        keccak256(
+                            abi.encodePacked(
+                                block.timestamp,
+                                block.prevrandao,
+                                msg.sender,
+                                packetIndex,
+                                i
+                            )
+                        )
+                    );
+                    // Distribute a random amount between 1 and (2 * average), ensuring it does not exceed remaining amount.
+                    uint256 average = remainingAmount / remainingShares;
+                    amountToDistribute = (random % (2 * average)) + 1;
+                    if (amountToDistribute > remainingAmount) {
+                        amountToDistribute = remainingAmount;
+                    }
+                }
+            }
+
+            results[i] = DistributeResult(
+                asset.assetType,
+                asset.token,
+                amountToDistribute
             );
+            distributedAmounts += amountToDistribute;
+        }
     }
 
     // 转移资产

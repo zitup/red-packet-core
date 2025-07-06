@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.26;
-import "./ITrigger.sol";
-import "./IAccess.sol";
-import "./IDistributor.sol";
 import "./types.sol";
 
 interface IPacket {
@@ -14,8 +11,7 @@ interface IPacket {
     error Expired();
     error AlreadyClaimed();
     error NoRemainingShares();
-    error AccessDenied(address);
-    error TriggerConditionNotMet(address);
+    error AccessDenied();
     error EthTransferFailed();
     /// events
     event Claimed(
@@ -40,10 +36,10 @@ interface IPacket {
 
     function claim(
         uint256 packetIndex,
-        bytes[] calldata accessProofs
+        bytes32[] calldata merkleProof
     ) external returns (bool);
 
-    function claimAll(bytes[][] calldata accessProofs) external;
+    function claimAll(bytes32[][] calldata accessProofs) external;
 
     function isExpired() external view returns (bool);
 

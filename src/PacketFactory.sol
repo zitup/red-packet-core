@@ -32,9 +32,6 @@ contract PacketFactory is IPacketFactory, Ownable {
     // 协议费接收地址
     address public feeReceiver;
 
-    // 合并为一个注册表
-    mapping(ComponentType => mapping(address => bool)) public isRegistered;
-
     // _permit: 0x000000000022D473030F116dDEE9F6B43aC78BA3
     constructor(
         address _owner,
@@ -73,20 +70,6 @@ contract PacketFactory is IPacketFactory, Ownable {
         return ownedPackets;
     }
 
-    /// @notice 获取指定组件类型的所有已注册组件
-    /// @param componentType 组件类型
-    /// @param components 要检查的组件地址列表
-    /// @return results 每个组件是否已注册的布尔值数组
-    function getRegisteredComponents(
-        ComponentType componentType,
-        address[] calldata components
-    ) external view returns (bool[] memory results) {
-        results = new bool[](components.length);
-        for (uint256 i = 0; i < components.length; i++) {
-            results[i] = isRegistered[componentType][components[i]];
-        }
-    }
-
     /// @notice 计算指定份数的手续费（以ETH为单位）
     /// @param shares 红包份数
     /// @return feeInETH 手续费（以ETH为单位）
@@ -115,27 +98,6 @@ contract PacketFactory is IPacketFactory, Ownable {
         emit FeeDenominatorUpdated(_denominator);
     }
 
-    function registerComponents(
-        ComponentType componentType,
-        address[] calldata components
-    ) external onlyOwner {
-        for (uint i = 0; i < components.length; i++) {
-            if (components[i] == address(0)) revert ZeroAddress();
-            isRegistered[componentType][components[i]] = true;
-            emit ComponentRegistered(componentType, components[i]);
-        }
-    }
-
-    function unregisterComponents(
-        ComponentType componentType,
-        address[] calldata components
-    ) external onlyOwner {
-        for (uint i = 0; i < components.length; i++) {
-            isRegistered[componentType][components[i]] = false;
-            emit ComponentUnregistered(componentType, components[i]);
-        }
-    }
-
     function createPacket(
         PacketConfig[] calldata configs,
         bytes calldata signature
@@ -160,54 +122,21 @@ contract PacketFactory is IPacketFactory, Ownable {
     }
 
     // 简化验证逻辑
-    function _validatePacketConfig(PacketConfig calldata config) internal view {
+    function _validatePacketConfig(PacketConfig calldata config) internal pure {
         // 基础检查
         if (config.assets.length == 0) revert NoAssets();
         if (config.base.shares == 0) revert InvalidShares();
-        if (config.base.access.length == 0) revert NoAccessControl();
+
+        // 验证白名单模式
+        if (config.base.accessType == AccessType.Whitelist) {
+            if (config.base.merkleRoot == bytes32(0)) revert NoAccessControl();
+        }
 
         // 验证资产金额
         for (uint i = 0; i < config.assets.length; i++) {
             if (config.assets[i].amount == 0) {
                 revert InvalidTokenAmount(config.assets[i].token);
             }
-        }
-
-        // 验证 access
-        for (uint i = 0; i < config.base.access.length; i++) {
-            if (
-                !isRegistered[ComponentType.Access][
-                    config.base.access[i].validator
-                ]
-            ) {
-                revert InvalidComponent(
-                    ComponentType.Access,
-                    config.base.access[i].validator
-                );
-            }
-        }
-
-        // 验证 triggers
-        for (uint i = 0; i < config.base.triggers.length; i++) {
-            address validator = config.base.triggers[i].validator;
-            if (
-                validator != address(0) &&
-                !isRegistered[ComponentType.Trigger][validator]
-            ) {
-                revert InvalidComponent(ComponentType.Trigger, validator);
-            }
-        }
-
-        // 验证 distributor
-        if (
-            !isRegistered[ComponentType.Distributor][
-                config.base.distribute.distributor
-            ]
-        ) {
-            revert InvalidComponent(
-                ComponentType.Distributor,
-                config.base.distribute.distributor
-            );
         }
     }
 

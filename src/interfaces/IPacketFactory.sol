@@ -4,21 +4,7 @@ pragma solidity 0.8.26;
 import "./types.sol";
 
 interface IPacketFactory {
-    enum ComponentType {
-        Access,
-        Trigger,
-        Distributor
-    }
-
     event PacketCreated(address indexed packet, address indexed creator);
-    event ComponentRegistered(
-        ComponentType indexed componentType,
-        address indexed component
-    );
-    event ComponentUnregistered(
-        ComponentType indexed componentType,
-        address indexed component
-    );
     event FeeReceiverUpdated(address indexed feeReceiver);
     event FeeDenominatorUpdated(uint256 denominator);
 
@@ -33,7 +19,6 @@ interface IPacketFactory {
     error InvalidShares();
     error NoAccessControl();
     error InvalidTokenAmount(address token);
-    error InvalidComponent(ComponentType componentType, address component);
     error InvalidEthAmount(uint256 required);
     error EthTransferFailed();
     error InvalidFeeConfig();
