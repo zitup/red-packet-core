@@ -5,7 +5,6 @@ import {Ownable} from "@oz/contracts/access/Ownable.sol";
 import {BeaconProxy} from "@oz/contracts/proxy/beacon/BeaconProxy.sol";
 import {ISignatureTransfer as IPermit2} from "@permit2/interfaces/ISignatureTransfer.sol";
 import {IPacketFactory} from "./interfaces/IPacketFactory.sol";
-import {IAggregatorV3} from "./interfaces/IAggregatorV3.sol";
 import "./interfaces/IPacket.sol";
 
 /// @title PacketFactory
@@ -15,12 +14,6 @@ contract PacketFactory is IPacketFactory, Ownable {
     address public immutable beacon;
 
     IPermit2 public immutable PERMIT2;
-
-    // ETH/USD 价格预言机
-    IAggregatorV3 public immutable ETH_USD_FEED;
-
-    // 每份红包的费用分母 (10表示0.1U, 100表示0.01U)
-    uint256 public feeShareDenominator = 10;
 
     // 创建者数量
     uint256 public creatorsCount;
@@ -37,18 +30,15 @@ contract PacketFactory is IPacketFactory, Ownable {
         address _owner,
         address _beacon,
         address _permit,
-        address _feeReceiver,
-        address _ethUsdFeed
+        address _feeReceiver
     ) Ownable(_owner) {
         if (_beacon == address(0)) revert ZeroBeaconAddress();
         if (_permit == address(0)) revert ZeroPermitAddress();
         if (_feeReceiver == address(0)) revert InvalidFeeReceiver();
-        if (_ethUsdFeed == address(0)) revert InvalidPriceFeed();
 
         beacon = _beacon;
         PERMIT2 = IPermit2(_permit);
         feeReceiver = _feeReceiver;
-        ETH_USD_FEED = IAggregatorV3(_ethUsdFeed);
     }
 
     /// @notice 获取所有红包地址
@@ -73,15 +63,9 @@ contract PacketFactory is IPacketFactory, Ownable {
     /// @notice 计算指定份数的手续费（以ETH为单位）
     /// @param shares 红包份数
     /// @return feeInETH 手续费（以ETH为单位）
-    /// @return feeInUSD 手续费（以USD为单位，6位小数）
-    /// @return ethPrice ETH/USD价格（8位小数）
     function calculateFee(
         uint256 shares
-    )
-        external
-        view
-        returns (uint256 feeInETH, uint256 feeInUSD, int256 ethPrice)
-    {
+    ) public pure returns (uint256 feeInETH) {
         return _calculateFee(shares);
     }
 
@@ -90,12 +74,6 @@ contract PacketFactory is IPacketFactory, Ownable {
         if (_feeReceiver == address(0)) revert InvalidFeeReceiver();
         feeReceiver = _feeReceiver;
         emit FeeReceiverUpdated(_feeReceiver);
-    }
-
-    function setFeeShareDenominator(uint256 _denominator) external onlyOwner {
-        if (_denominator == 0) revert InvalidFeeConfig();
-        feeShareDenominator = _denominator;
-        emit FeeDenominatorUpdated(_denominator);
     }
 
     function createPacket(
@@ -164,7 +142,7 @@ contract PacketFactory is IPacketFactory, Ownable {
         (expectedEthValue) = _handleERC20Transfers(packet, configs, permit);
 
         // 计算基于份数的手续费
-        (uint256 totalFee, , ) = _calculateFee(totalShares);
+        uint256 totalFee = _calculateFee(totalShares);
 
         // 检查并转移ETH（包含手续费）
         if (msg.value < (expectedEthValue + totalFee))
@@ -234,26 +212,14 @@ contract PacketFactory is IPacketFactory, Ownable {
 
     function _calculateFee(
         uint256 shares
-    )
-        internal
-        view
-        returns (uint256 feeInETH, uint256 feeInUSD, int256 ethPrice)
-    {
-        // 获取最新的ETH/USD价格
-        (, ethPrice, , , ) = ETH_USD_FEED.latestRoundData();
-        if (ethPrice <= 0) revert InvalidPrice();
-
-        // 计算以USD计价的总费用（每份0.1U）
-        // 例如：10份 * (1/10)U = 1U
-        feeInUSD = shares * (1e6 / feeShareDenominator); // 结果保持6位小数
-
-        // 将USD费用转换为ETH
-        // 1. 将ETH价格转换为1U对应的ETH数量（1/price）
-        // 2. 将这个比例应用到我们的feeInUSD上
-        // ethPrice是ETH/USD价格，带有8位小数
-        uint256 priceScaled = uint256(ethPrice) * 1e10; // 8位小数 -> 18位小数
-        uint256 oneUsdInEth = 1e36 / priceScaled; // 1e18 * 1e18 / priceScaled，得到1U对应的ETH数量（18位小数）
-        feeInETH = (feeInUSD * oneUsdInEth) / 1e6; // feeInUSD（6位小数）* oneUsdInEth（18位小数）/ 1e6 = ETH数量（18位小数）
+    ) internal pure returns (uint256 feeInETH) {
+        if (shares <= 100) {
+            return 0.001 ether;
+        } else if (shares <= 1000) {
+            return 0.01 ether;
+        } else {
+            return 0.05 ether;
+        }
     }
 
     receive() external payable {}
