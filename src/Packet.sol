@@ -20,13 +20,13 @@ contract Packet is IPacket, Initializable, ReentrancyGuard {
 
     // 基础信息
     address public creator;
-    PacketConfig[] public configs;
+    PacketConfig public config;
     uint256 public createTime;
 
     // 领取状态
-    mapping(uint256 => uint256) public claimedShares; // packetIndex => claimed shares
-    mapping(uint256 => uint256) public claimedAmounts; // packetIndex => claimed shares
-    mapping(uint256 => mapping(address => bool)) public claimed; // packetIndex => user => claimed
+    uint256 public claimedShares;
+    uint256 public claimedAmounts;
+    mapping(address => bool) public claimed;
 
     modifier onlyFactory() {
         if (msg.sender != factory) revert NotFactory();
@@ -38,24 +38,20 @@ contract Packet is IPacket, Initializable, ReentrancyGuard {
         _;
     }
 
-    modifier whenActive(uint256 packetIndex) {
-        uint256 startTime = configs[packetIndex].base.startTime;
-        uint256 durationTime = configs[packetIndex].base.durationTime;
+    modifier whenActive() {
+        uint256 startTime = config.base.startTime;
+        uint256 durationTime = config.base.durationTime;
         require(block.timestamp >= startTime, "RP: Not started");
         require(block.timestamp <= startTime + durationTime, "RP: Expired");
         _;
     }
 
     function initialize(
-        PacketConfig[] calldata _configs,
+        PacketConfig calldata _config,
         address _creator
     ) external initializer {
         factory = msg.sender;
-
-        // 设置基础配置
-        for (uint i = 0; i < _configs.length; i++) {
-            configs.push(_configs[i]);
-        }
+        config = _config;
         creator = _creator;
         createTime = block.timestamp;
     }
@@ -65,17 +61,11 @@ contract Packet is IPacket, Initializable, ReentrancyGuard {
         view
         returns (PacketInfo memory packetInfo)
     {
-        uint256 totalPackets = configs.length;
-        uint256[] memory allClaimedShares = new uint256[](totalPackets);
-        for (uint256 i = 0; i < totalPackets; i++) {
-            allClaimedShares[i] = claimedShares[i];
-        }
-
         packetInfo = PacketInfo({
             creator: creator,
-            configs: configs,
+            config: config,
             createTime: createTime,
-            claimedShares: allClaimedShares,
+            claimedShares: claimedShares,
             isExpired: isExpired()
         });
     }
@@ -116,33 +106,20 @@ contract Packet is IPacket, Initializable, ReentrancyGuard {
     // 查询功能
     /// @notice 检查所有红包是否已过期
     function isExpired() public view returns (bool) {
-        uint256 totalPackets = configs.length;
-        for (uint256 i = 0; i < totalPackets; i++) {
-            if (
-                block.timestamp <=
-                configs[i].base.startTime + configs[i].base.durationTime
-            ) {
-                return false;
-            }
-        }
-        return true;
+        return
+            block.timestamp > config.base.startTime + config.base.durationTime;
     }
 
     /// @notice 领取红包
-    /// @param packetIndex 红包索引
     /// @param merkleProof 访问控制证明 (for whitelist)
     function claim(
-        uint256 packetIndex,
         bytes32[] calldata merkleProof
-    ) public whenActive(packetIndex) nonReentrant returns (bool) {
-        PacketConfig storage config = configs[packetIndex];
-
+    ) public whenActive nonReentrant returns (bool) {
         // 检查是否已领取
-        if (claimed[packetIndex][msg.sender]) revert AlreadyClaimed();
+        if (claimed[msg.sender]) revert AlreadyClaimed();
 
         // 检查剩余份数
-        uint256 remainingShares = config.base.shares -
-            claimedShares[packetIndex];
+        uint256 remainingShares = config.base.shares - claimedShares;
         if (remainingShares == 0) revert NoRemainingShares();
 
         // 验证访问控制
@@ -155,36 +132,18 @@ contract Packet is IPacket, Initializable, ReentrancyGuard {
         // 计算分配结果
         DistributeResult[] memory results;
         uint256 distributedAmounts;
-        (results, distributedAmounts) = _calculateDistribution(
-            packetIndex,
-            config
-        );
+        (results, distributedAmounts) = _calculateDistribution(config);
 
         // 更新状态
-        claimed[packetIndex][msg.sender] = true;
-        claimedShares[packetIndex]++;
-        claimedAmounts[packetIndex] += distributedAmounts;
+        claimed[msg.sender] = true;
+        claimedShares++;
+        claimedAmounts += distributedAmounts;
 
         // 转移资产
         _transferAssets(msg.sender, results);
 
-        emit Claimed(msg.sender, packetIndex, results);
+        emit Claimed(msg.sender, results);
         return true;
-    }
-
-    /// @notice 一次性领取所有红包
-    function claimAll(bytes32[][] calldata accessProofs) external nonReentrant {
-        uint256 totalPackets = configs.length;
-
-        for (uint256 i = 0; i < totalPackets; i++) {
-            // 跳过已领取的红包
-            if (claimed[i][msg.sender]) continue;
-
-            // 尝试领取每个红包
-            // 注意：即使某个红包领取失败，继续尝试其他红包
-            claim(i, accessProofs[i]);
-        }
-        emit ClaimAll(msg.sender, totalPackets);
     }
 
     // 验证访问控制
@@ -203,25 +162,23 @@ contract Packet is IPacket, Initializable, ReentrancyGuard {
 
     // 计算分配结果
     function _calculateDistribution(
-        uint256 packetIndex,
-        PacketConfig storage config
+        PacketConfig storage _config
     )
         internal
         view
         returns (DistributeResult[] memory results, uint256 distributedAmounts)
     {
-        uint remainingShares = config.base.shares - claimedShares[packetIndex];
-        results = new DistributeResult[](config.assets.length);
+        uint remainingShares = _config.base.shares - claimedShares;
+        results = new DistributeResult[](_config.assets.length);
 
-        for (uint i = 0; i < config.assets.length; i++) {
-            Asset storage asset = config.assets[i];
+        for (uint i = 0; i < _config.assets.length; i++) {
+            Asset storage asset = _config.assets[i];
             uint256 amountToDistribute;
 
-            if (config.base.distributeType == DistributeType.Average) {
-                amountToDistribute = asset.amount / config.base.shares;
-            } else if (config.base.distributeType == DistributeType.Lucky) {
-                uint256 remainingAmount = asset.amount -
-                    claimedAmounts[packetIndex];
+            if (_config.base.distributeType == DistributeType.Average) {
+                amountToDistribute = asset.amount / _config.base.shares;
+            } else if (_config.base.distributeType == DistributeType.Lucky) {
+                uint256 remainingAmount = asset.amount - claimedAmounts;
                 if (remainingShares == 1) {
                     amountToDistribute = remainingAmount;
                 } else {
@@ -232,7 +189,6 @@ contract Packet is IPacket, Initializable, ReentrancyGuard {
                                 block.timestamp,
                                 block.prevrandao,
                                 msg.sender,
-                                packetIndex,
                                 i
                             )
                         )

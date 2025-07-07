@@ -14,18 +14,12 @@ interface IPacket {
     error AccessDenied();
     error EthTransferFailed();
     /// events
-    event Claimed(
-        address indexed claimer,
-        uint256 indexed packetIndex,
-        DistributeResult[] result
-    );
-
-    event ClaimAll(address indexed claimer, uint256 totalPackets);
+    event Claimed(address indexed claimer, DistributeResult[] result);
 
     function creator() external view returns (address);
 
     function initialize(
-        PacketConfig[] calldata config,
+        PacketConfig calldata config,
         address _creator
     ) external;
 
@@ -34,12 +28,7 @@ interface IPacket {
         view
         returns (PacketInfo memory packetInfo);
 
-    function claim(
-        uint256 packetIndex,
-        bytes32[] calldata merkleProof
-    ) external returns (bool);
-
-    function claimAll(bytes32[][] calldata accessProofs) external;
+    function claim(bytes32[] calldata merkleProof) external returns (bool);
 
     function isExpired() external view returns (bool);
 

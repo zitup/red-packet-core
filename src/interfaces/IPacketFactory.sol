@@ -25,7 +25,7 @@ interface IPacketFactory {
     function feeReceiver() external view returns (address);
 
     function createPacket(
-        PacketConfig[] calldata configs,
+        PacketConfig calldata config,
         bytes calldata permit
     ) external payable returns (address packet); // 返回红包合约地址
 

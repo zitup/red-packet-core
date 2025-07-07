@@ -60,9 +60,9 @@ struct PacketConfig {
 
 struct PacketInfo {
     address creator;
-    PacketConfig[] configs;
+    PacketConfig config;
     uint256 createTime;
-    uint256[] claimedShares;
+    uint256 claimedShares;
     bool isExpired;
 }
 

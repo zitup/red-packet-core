@@ -77,26 +77,21 @@ contract PacketFactory is IPacketFactory, Ownable {
     }
 
     function createPacket(
-        PacketConfig[] calldata configs,
-        bytes calldata signature
+        PacketConfig calldata config,
+        bytes calldata permit
     ) public payable returns (address packet) {
-        if (configs.length == 0) revert EmptyConfigs();
-
         // # 1. 验证配置
-        uint256 totalShares;
-        for (uint i = 0; i < configs.length; i++) {
-            _validatePacketConfig(configs[i]);
-            totalShares += configs[i].base.shares;
-        }
+        _validatePacketConfig(config);
+        uint256 totalShares = config.base.shares;
 
         // # 2. 部署红包合约
         packet = _deployPacket();
 
         // # 3. 处理资产转移
-        _transferAssets(packet, configs, signature, totalShares);
+        _transferAssets(packet, config, permit, totalShares);
 
         // # 4. 初始化红包合约
-        IPacket(packet).initialize(configs, msg.sender);
+        IPacket(packet).initialize(config, msg.sender);
     }
 
     // 简化验证逻辑
@@ -134,12 +129,12 @@ contract PacketFactory is IPacketFactory, Ownable {
 
     function _transferAssets(
         address packet,
-        PacketConfig[] calldata configs,
+        PacketConfig calldata config,
         bytes calldata permit,
         uint256 totalShares
     ) internal {
         uint256 expectedEthValue;
-        (expectedEthValue) = _handleERC20Transfers(packet, configs, permit);
+        (expectedEthValue) = _handleERC20Transfers(packet, config, permit);
 
         // 计算基于份数的手续费
         uint256 totalFee = _calculateFee(totalShares);
@@ -163,7 +158,7 @@ contract PacketFactory is IPacketFactory, Ownable {
 
     function _handleERC20Transfers(
         address packet,
-        PacketConfig[] calldata configs,
+        PacketConfig calldata config,
         bytes calldata permit
     ) internal returns (uint256 expectedEthValue) {
         IPermit2.PermitBatchTransferFrom memory permitBatch;
@@ -182,20 +177,18 @@ contract PacketFactory is IPacketFactory, Ownable {
 
         uint256 transferDetailsIndex = 0;
 
-        for (uint256 i = 0; i < configs.length; i++) {
-            for (uint256 j = 0; j < configs[i].assets.length; j++) {
-                Asset calldata asset = configs[i].assets[j];
+        for (uint256 j = 0; j < config.assets.length; j++) {
+            Asset calldata asset = config.assets[j];
 
-                if (asset.assetType == AssetType.Native) {
-                    expectedEthValue += asset.amount;
-                } else if (asset.assetType == AssetType.ERC20) {
-                    // 转移完整金额到红包合约
-                    transferDetails[transferDetailsIndex++] = IPermit2
-                        .SignatureTransferDetails({
-                            to: packet,
-                            requestedAmount: asset.amount
-                        });
-                }
+            if (asset.assetType == AssetType.Native) {
+                expectedEthValue += asset.amount;
+            } else if (asset.assetType == AssetType.ERC20) {
+                // 转移完整金额到红包合约
+                transferDetails[transferDetailsIndex++] = IPermit2
+                    .SignatureTransferDetails({
+                        to: packet,
+                        requestedAmount: asset.amount
+                    });
             }
         }
 
