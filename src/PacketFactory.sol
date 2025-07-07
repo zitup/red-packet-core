@@ -96,6 +96,10 @@ contract PacketFactory is IPacketFactory, Ownable {
 
     // 简化验证逻辑
     function _validatePacketConfig(PacketConfig calldata config) internal pure {
+        require(
+            config.assets.length == 1,
+            "MVP: Only one asset type per packet"
+        );
         // 基础检查
         if (config.assets.length == 0) revert NoAssets();
         if (config.base.shares == 0) revert InvalidShares();
